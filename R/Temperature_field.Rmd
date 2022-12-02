@@ -1,0 +1,922 @@
+---
+title: "Carpinteria Salt Marsh - temperature data"
+author: "Krista Kraskura"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output:
+  html_document:
+    toc: yes
+    toc_depth: 3
+    number_sections: yes
+    toc_float:
+      collapsed: yes
+      smooth_scroll: yes
+    theme: lumen
+---
+
+
+
+# Carpinteria HOBO DATA 
+
+**Coordinates of the logger: **
+(Info TBD - awaiting updates)
+
+**Location description: **
+(Info TBD - awaiting updates)
+
+**Deployment details: ** 
+(Info TBD - awaiting updates)
+
+\
+\
+
+# Resources to explore online and a few papers: 
+1. [Carp UC reserve website](https://carpinteria.ucnrs.org/ "homepage")
+2. [Google drive folder with Andy Brook's phd thesis and intiaal ref list of readings; need to be revised](https://drive.google.com/drive/folders/1KNzaT63h2dbMBDQsxIDqnNrhB7j41kja?usp=sharing "google drive")
+
+\
+\
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+
+ggformat<-function(plot, title="", y_title, x_title, print=TRUE, size_text = 15){
+	
+	plot_name<-deparse(substitute(plot))
+  
+	plot<- plot +
+	theme_classic()+
+	ggtitle(title)+							
+	ylab(y_title)+ 							
+	xlab(x_title)+ 							
+	theme(axis.text.y=element_text(size=size_text, colour= 'black'),
+		axis.text.x=element_text(size=size_text, colour= 'black'),
+		axis.line.y=element_line(colour = 'black',size=0.5),
+		axis.line.x=element_line(colour = 'black',size=0.5),
+		axis.ticks.y=element_line(size=0.5),
+		# axis.ticks.x=element_line(size=0.5), 
+		axis.ticks.x.bottom = element_line(size=0.5, colour = "black"))+
+	theme(axis.title.y=element_text(size=size_text),
+		axis.title.x=element_text(size=size_text),
+		panel.border = element_rect(linetype = "solid",fill=NA, colour = "black"))
+
+	if (print==TRUE){	
+		print(plot)	
+	}
+	
+	assign(plot_name, plot, envir=parent.frame())
+	
+}
+
+# a function that takes out the data between the "out" and "in"
+discard.data.not.submerged <- function(dataframe){
+      
+    head(dataframe)
+    rows.logged <- which(dataframe$WaterDetect!= " ")
+    rows.logged.out <- rows.logged[which((dataframe[rows.logged,3]) == "Out")]
+    rows.logged.in <- rows.logged[which((dataframe[rows.logged,3]) == "In")]
+      
+    if(!c(length(rows.logged.out) == length(rows.logged.in))){
+      if(length(rows.logged.out) > length(rows.logged.in)){
+        message("logger left out")
+      }
+    }else{
+      for (i in 1:length(rows.logged.out)){
+        dataframe<-dataframe[-c(rows.logged.out[i] :  rows.logged.in[i]),]
+      }
+    }
+  
+    return(invisible(dataframe))
+}
+```
+
+```{r, echo=FALSE, message=FALSE}
+library(rmarkdown)
+library(prettydoc)
+library(tidyverse)
+library(data.table)
+library(chron)
+library(tidyverse)
+library(lubridate)
+library(gridExtra)
+library(ggsci)
+library(zoo)
+library(ggpubr)  
+library(viridisLite) 
+library(cowplot)
+library(knitr)
+library(ggridges)
+library(viridis)
+library(hrbrthemes)
+
+
+
+```
+
+
+# Data organisation
+
+## Import and clean up. 
+
+The script behind here reads in the data, organizes it to prep the data for plotting
+\
+
+**Data:** 
+\
+\
+
+Data file: **ELIASON CF2 2021-07-06 09_32_26 -0700.csv**
+Location of the logger: 
+Site description for the logger site:
+
+\
+\
+
+```{r, echo = FALSE, warning=FALSE, error=FALSE}
+dataF20<-read.csv("/Users/kristakraskura/Github_repositories/Salt-marsh-fish-physio/Environmental data/2021 June 7/ELIASON CF2 2021-07-06 09_32_26 -0700.csv", skip = 2, header = T)
+dataF20<-dataF20[, c(1:3)]
+
+colnames(dataF20)<-c("ServerTime", "Value",  "WaterDetect")
+
+# making sure there areno NA values
+dataF20<-dataF20[!(is.na(dataF20$Value)), ]
+dataF20<-dataF20[!(is.na(dataF20$ServerTime)), ]
+
+# dataF20<-discard.data.not.submerged(dataF20)
+
+```
+
+## 1. Calculating a rolling mean. 
+
+Taking a mean of every three values, this helps to smooth out the data and to visually exclude any outliers. It can provide an average (smoother) trend of the data, while not decreasing the number of total data points.
+
+
+
+```{r echo=FALSE}
+
+temps.meanF20 <- dataF20[,1:2] %>%
+  dplyr::mutate(temp_0.5h = zoo::rollmean(Value, k = 3, fill = NA)) %>% 
+  dplyr::ungroup() %>% 
+  as.data.frame()
+
+# rolling mean 5 day average 
+temps.meanF5d <- dataF20[,1:2] %>%
+  dplyr::mutate(temp_0.5h = zoo::rollmean(Value, k = 6*24*7, fill = NA)) %>% 
+  dplyr::ungroup() %>% 
+  as.data.frame()
+
+```
+\
+\
+
+## 2. Dealing with date and time formats in R.
+
+Different date and time formats are tricky in R. We ensure that what we have is suitable for effective interpretation and plotting temperature change across different timescales.
+
+That includes separating out:
+* months
+* days 
+* hours
+* years
+
+Additionally, we are also ensuring that the time is encoded by `"POSIXct" "POSIXt"` formats. 
+
+For our purposes, we assign each month of the year to a season, see below. [This can be changed as needed]
+
+```{r, message=FALSE, echo=FALSE}
+
+
+temps.meanF20$ServerDateTime<-as.POSIXct(temps.meanF20$ServerTime, format="%Y-%m-%d %H:%M:%S")
+temps.meanF20$LocalDateTime<- temps.meanF20$ServerDateTime + hours(3) # add 3 hours
+temps.meanF5d$ServerDateTime<-as.POSIXct(temps.meanF5d$ServerTime, format="%Y-%m-%d %H:%M:%S")
+temps.meanF5d$LocalDateTime<- temps.meanF5d$ServerDateTime + hours(3) # add 3 hours
+# class(temps.meanF20$LocalDateTime)
+
+temps.meanF20 <- transform(temps.meanF20,time.str = format(ServerDateTime,'%H:%M:%S'),
+                           y = year(ServerDateTime),
+                           mo = month(ServerDateTime),
+                           day = day(ServerDateTime),
+                           hour = hour(ServerDateTime),
+                           minute = minute(ServerDateTime),
+                           second= second(ServerDateTime))
+temps.meanF20$minutes.day <- 60 * temps.meanF20$hour + temps.meanF20$minute
+
+temps.meanF5d <- transform(temps.meanF5d,time.str = format(ServerDateTime,'%H:%M:%S'),
+                           y = year(ServerDateTime),
+                           mo = month(ServerDateTime),
+                           day = day(ServerDateTime),
+                           hour = hour(ServerDateTime),
+                           minute = minute(ServerDateTime),
+                           second= second(ServerDateTime))
+temps.meanF5d$minutes.day <- 60 * temps.meanF5d$hour + temps.meanF5d$minute
+
+
+temps.meanF20 <- temps.meanF20  %>%
+  mutate(Season = case_when( mo == 9 ~ "Fall",
+                               mo == 10 ~ "Fall", 
+                               mo == 11 ~ "Winter",
+                               mo == 12 ~ "Winter",
+                               mo == 1 ~ "Winter",
+                               mo == 2 ~ "Winter",
+                               mo == 3 ~ "Spring",
+                               mo == 4 ~ "Spring",
+                               mo == 5 ~ "Summer",
+                               mo == 6 ~ "Summer",
+                               mo == 7 ~ "Summer",
+                               mo == 8 ~ "Summer",
+    ))
+
+
+```
+
+```{r, echo=FALSE}
+
+temps.meanF5d <- temps.meanF5d  %>%
+  mutate(Season = case_when( mo == 9 ~ "Fall",
+                               mo == 10 ~ "Fall", 
+                             
+                               mo == 11 ~ "Winter",
+                               mo == 12 ~ "Winter",
+                               mo == 1 ~ "Winter",
+                               mo == 2 ~ "Winter",
+                             
+                               mo == 3 ~ "Spring",
+                               mo == 4 ~ "Spring",
+                             
+                               mo == 5 ~ "Summer",
+                               mo == 6 ~ "Summer",
+                               mo == 7 ~ "Summer",
+                               mo == 8 ~ "Summer"))
+
+
+```
+\
+\
+
+## 3. Summarizing some data 
+
+Tables below summarize:
+  
+  - mean values
+  - minimum and maximum temperatures
+  - variation 
+  - daily ranges of temperatures
+
+
+```{r, echo = FALSE, message= FALSE, fig.align='center' , out.width="50%"}
+
+colors.season<-c("#0082F1", "#29883E",  "#E03048", "#95721B")
+image(1:4, 1, as.matrix(1:4), 
+      col=colors.season,
+      xlab="", ylab = "", xaxt = "n", yaxt = "n", bty = "n")
+text(c(1,2, 3,4),c(1),c("Winter", "Spring", "Summer", "Fall"), cex=2)
+
+```
+
+
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+
+#*(The code also removes NA values)*
+# DAILY: summary  
+names(temps.meanF20)[names(temps.meanF20) == 'Value'] <- 'TEMP_C'
+temps.meanF20<-temps.meanF20[complete.cases(temps.meanF20),]
+
+temp_sum_D <- temps.meanF20 %>%
+  dplyr:::group_by(mo,day, y, Season) %>%
+  summarize(mean_temp = mean(TEMP_C), min_temp = min(TEMP_C), max_temp = max(TEMP_C), var_temp = var(TEMP_C),
+            sd_temp = sd(TEMP_C), range_temp = max_temp - min_temp, .groups = "keep") %>% 
+  as.data.frame()
+
+temp_sum_MEANofMEAN <- temp_sum_D %>%
+  dplyr:::group_by(mo, y) %>%
+  summarize(
+    mean_meantemp = mean(mean_temp), min_meantemp = min(mean_temp), max_meantemp = max(mean_temp), n = length(mean_temp), 
+    mean_mintemp = mean(min_temp), min_mintemp = min(min_temp), max_mintemp = max(min_temp), n = length(min_temp), 
+    mean_maxtemp = mean(max_temp), min_maxtemp = min(max_temp), max_maxtemp = max(max_temp), n = length(max_temp)) %>% 
+ mutate(across(where(~ is.numeric(.)), ~ round(., 2))) %>% 
+  as.data.frame()
+
+# create a variable that is unique to each mon, day - this will be needed for plotting ranges daily
+temp_sum_D$MO_DAY<-paste(temp_sum_D$mo, "-", temp_sum_D$day, sep="")
+
+# remove NAs:
+temp_sum_D<-temp_sum_D[complete.cases(temp_sum_D),]
+
+
+# SEASONAL: summary 
+
+temp_sum_S <- temps.meanF20 %>%
+  dplyr:::group_by(Season,mo, day, y) %>%
+  summarize(mean_temp = mean(TEMP_C), min_temp = min(TEMP_C), max_temp = max(TEMP_C), var_temp = var(TEMP_C),
+            sd_temp = sd(TEMP_C), range_temp = max_temp - min_temp, .groups = "keep") %>% 
+  as.data.frame()
+
+temp_sum_MEANofMEAN_S <- temp_sum_S %>%
+  dplyr:::group_by(Season, y) %>%
+  summarize(
+    mean_meantemp = mean(mean_temp), min_meantemp = min(mean_temp), max_meantemp = max(mean_temp), n = length(mean_temp), 
+    mean_mintemp = mean(min_temp), min_mintemp = min(min_temp), max_mintemp = max(min_temp), n = length(min_temp), 
+    mean_maxtemp = mean(max_temp), min_maxtemp = min(max_temp), max_maxtemp = max(max_temp), n = length(max_temp)) %>% 
+ mutate(across(where(~ is.numeric(.)), ~ round(., 2))) %>% 
+  as.data.frame()
+
+
+temp_sum_D$asDate<-as.Date(paste(temp_sum_D$y, "-", temp_sum_D$mo, "-", temp_sum_D$d, sep=""), format = c("%Y-%m-%d")) # "POSIXct" "POSIXt"  --> "Date"
+temp_sum_D$julianDate<-yday(temp_sum_D$asDate)  # Date --> numeric (as Julian)
+
+
+
+```
+
+```{r, layout="l-body-outset", echo=FALSE}
+
+paged_table(temp_sum_MEANofMEAN, options = list(rows.print = 15))
+
+# kable (temp_sum_MEANofMEAN,  digits = 2)
+paged_table(temp_sum_MEANofMEAN_S, options = list(rows.print = 15))
+
+```
+ \
+ \
+ 
+# 3. Figures! 
+
+## Frequency plot of temperatures in each each month of the year
+
+This plot has all temperature recordings in a year-wide histogram. All seasons are combined. The orange, middle temperature is at the 15 C temperature. 
+
+```{r, echo=FALSE, message=FALSE, fig.align='center', fig.width = 10, fig.height=8}
+plot_1<-ggplot(data = temps.meanF20, aes(x=TEMP_C, fill = ..x.., color = ..x..))+
+  geom_histogram(bins=100)+
+  scale_fill_gradient2(low = "darkblue", mid = "orange", high = "red", midpoint = 15)+
+  scale_color_gradient2(low = "darkblue", mid = "orange", high = "red", midpoint = 15)+
+  # scale_x_continuous(breaks=c(10, 11, 12, 13, 18, 19, 20, 21))+
+  geom_vline(xintercept = c(10, 15, 20, 25, 30), linetype = "dashed",show.legend = FALSE) +
+  # scale_color_manual(values = c( "#00284E",  "#2E6894",  "#578BBA", "#7EB0E1", "#900013", "#DE4949", "#E9A099", "#FFB4A9"))+
+  facet_wrap(~y, nrow=3)+
+  theme_pubr()+
+  xlab(expression(Temperature~degree*C))+
+  ylab(expression(N~datapoints~recorded))+
+  theme(axis.title.x = element_text(size = 15), 
+        axis.title.y = element_text(size = 15),
+        axis.text.y = element_blank(),
+        axis.text.x = element_text(size = 10, face = "bold"))
+plot_1
+
+
+```
+
+
+## Line plot/ trend plot.
+
+This plot shows the daily trends. Each panel is a differenet month (1 = January, 2 = February, etc), each small line tracks one day in the specific month. All years are combined. The colors represent the seasonal classification (see legend). The horizontal lines are the thresholds or temperature levels that were used in our previous goby experiment in Fall 2019 (ie. 12,17, 22, 27, 32 ºC, and 35 is the dashed ~ CTmax of these fish). The shaded area marks the approximate dark hours of the day, specifically this marks: 7 am to 5 pm
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.align='center', fig.width = 10, fig.height=8}
+
+daily.pF20 <- ggplot(temps.meanF20, aes(minutes.day/60, TEMP_C, group = interaction(y, mo, day)))+
+  # geom_point(size=1, pch=".")+
+  ylim(0, 35)+
+  annotate("rect", xmin=0, xmax=420/60, ymin=-Inf, ymax=Inf, alpha=0.5, fill="grey90") +
+  annotate("rect", xmin=1020/60, xmax=1440/60, ymin=-Inf, ymax=Inf, alpha=0.5, fill="grey90") +
+  geom_hline(yintercept = 12, color = "#BE647D", lty=1)+
+  geom_hline(yintercept = 22, color = "#00C59E", lty=1)+
+  geom_hline(yintercept = 27, color = "#00518C", lty=1)+
+  geom_hline(yintercept = 17, color = "#DBA11C", lty=1)+
+  geom_hline(yintercept = 32, color = "red", lty=1)+
+  geom_hline(yintercept = 35, color = "red", lty=2)+
+  geom_line(aes(minutes.day/60, TEMP_C, group = interaction(y, mo, day), color = Season), size=0.4, alpha=0.5)+
+  facet_wrap(.~mo, nrow=3)+
+  scale_color_manual(labels = c("Winter", "Spring", "Summer", "Fall"), values = c(colors.season[4], colors.season[2], colors.season[3],colors.season[1]))
+ggformat(daily.pF20, title = "", y_title = expression(Temperature~(degree*C)), x_title = "Time in the day (h)")
+daily.p20 <- daily.pF20 + theme(legend.position = "top")
+
+```
+\
+\
+
+
+## Daily summary statistics
+
+### Daily **minimum** temperatures in each month accross 3 years (facets). 
+
+The peaks are density frequency distributions with the vertical black line indicating the median value (0.5 quantile). THe small lines on the bottom mark each datapoint.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.align='center', fig.width=10}
+#playing around
+# ggplot(data = temp_sum_D, aes(x=MO_DAY, y=min_temp))+
+#   geom_point(alpha=0.5, col="blue", size=0.5, pch=1)+
+#   geom_point(aes(x=MO_DAY, y=max_temp), alpha=0.5, col="red", size=0.5, pch=1)+
+#   theme_classic()+
+#   theme(axis.title.x = element_blank())+
+#   # geom_hline(yintercept = c(20, 10))+
+#   geom_vline(xintercept = c("4-1","9-1"), col="black", lty="dashed", size=0.5)+
+#   facet_wrap(.~y)
+
+min_plot<-ggplot(data=temp_sum_D, aes(y=factor(mo), x=min_temp, group = factor(mo) ))+
+  # geom_violin(data=temp_sum_D, aes(factor(mo),  group = factor(mo) ), color = "darkblue")+
+  geom_density_ridges(scale = 2.5, rel_min_height = 0.01, alpha=0.7, color = "darkblue", jittered_points = TRUE,
+    position = position_points_jitter(width = 0.05, height = 0),
+    point_shape = '|', point_size = 3, point_alpha = 1, quantile_lines = TRUE, quantiles = 2) +
+  # geom_point(size=1, alpha=0.5, size=21,  color = "darkblue")+
+  scale_y_discrete(labels = c("January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"))+
+  facet_grid(.~y)
+ggformat(min_plot,x_title = "Daily min Temp (ºC)", y_title = "Month", print = FALSE )
+min_plot<- min_plot + coord_cartesian(clip = "off") +
+    theme_minimal(base_size = 14) + 
+    theme(axis.text.y = element_text(vjust = 0))+
+    theme( axis.text.x = element_text(angle = 90, hjust = 1))
+print(min_plot)
+
+```
+\
+\
+
+### Daily **maximum** temperatures in each month accross 3 years.
+
+The peaks are density frequency distributions with the vertical black line indicating the median value (0.5 quantile). The small lines on the bottom mark each datapoint.
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.align='center', fig.width=10}
+
+max_plot<-ggplot(data=temp_sum_D, aes(y = factor(mo), x = max_temp, group = factor(mo) ))+
+  # geom_violin(data=temp_sum_D, aes(factor(mo),  group = factor(mo) ), color = "darkred")+
+    geom_density_ridges(scale = 2.5, rel_min_height = 0.01, alpha=0.7, color = "darkred", jittered_points = TRUE,
+    position = position_points_jitter(width = 0.05, height = 0),
+    point_shape = '|', point_size = 3, point_alpha = 1, quantile_lines = TRUE, quantiles = 2) +
+  # geom_point(size=1, alpha=0.5, size=21,  color = "darkblue")+
+  scale_y_discrete(labels = c("January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"))+
+  facet_grid(.~y)
+ggformat(max_plot,x_title = "Daily max Temp (ºC)", y_title = "Month", print = FALSE )
+max_plot<- max_plot + coord_cartesian(clip = "off") +
+    theme_minimal(base_size = 14) + 
+    theme(axis.text.y = element_text(vjust = 0))+
+    theme( axis.text.x = element_text(angle = 90, hjust = 1))
+print(max_plot)
+
+```
+\
+\
+
+### Daily **mean** temperatures in each month accross 3 years. 
+
+The peaks are density frequency distributions with the vertical black line indicating the median value (0.5 quantile). The small lines on the bottom mark each datapoint.
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.align='center', fig.width=10}
+
+mean_plot<-ggplot(data=temp_sum_D, aes(y = factor(mo), x = mean_temp, group = factor(mo) ))+
+  # geom_violin(data=temp_sum_D, aes(factor(mo),  group = factor(mo) ), color = "grey")+
+    geom_density_ridges(scale = 2.5, rel_min_height = 0.01, alpha=0.7, color = "black", jittered_points = TRUE,
+    position = position_points_jitter(width = 0.05, height = 0),
+    point_shape = '|', point_size = 3, point_alpha = 1, quantile_lines = TRUE, quantiles = 2) +
+  # geom_point(size=1, alpha=0.5, size=21,  color = "darkblue")+
+  scale_y_discrete(labels = c("January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"))+
+  facet_grid(.~y)
+ggformat(mean_plot,x_title = "Daily mean Temp (ºC)", y_title = "Month", print = FALSE )
+mean_plot<- mean_plot + coord_cartesian(clip = "off") +
+    theme_minimal(base_size = 14) + 
+    theme(axis.text.y = element_text(vjust = 0))+
+    theme( axis.text.x = element_text(angle = 90, hjust = 1))
+print(mean_plot)
+
+
+
+
+
+```
+\
+\
+
+### The daily ranges (daily maximum ºC - daily minimum ºC). 
+
+The color represents the season as defined above and the shaded area marks 10 - 20 ºC fluctuations.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.align='center', fig.width=10}
+
+# temp_sum_D$mo<-as.factor(temp_sum_D$mo)
+# range_plot<-ggplot(data=temp_sum_D, aes(factor(mo), range_temp, group = factor(mo) ))+
+#   # geom_(data=temp_sum_D, aes(factor(mo),  group = factor(mo) ), color = "black")+
+#   geom_point(size=1, alpha=0.5, size=21,  color = "black")+
+#   theme_classic()+
+#   theme( axis.text.x = element_text(angle = 90, hjust = 1))+
+#   facet_grid(.~y)
+# ggformat(range_plot,y_title = "Daily range (max-min ºC)", x_title = "Month", print = TRUE )
+
+range_ridge_plot<-ggplot(temp_sum_D, aes(x = `range_temp`, y = factor(`mo`), fill = Season, group = factor(mo), color = Season)) +
+  annotate("rect", xmin=10, xmax=20, ymin=-Inf, ymax=Inf, alpha=0.7, fill="grey90") +
+  geom_vline(xintercept = c(10, 20))+
+  geom_density_ridges(scale = 2.5, rel_min_height = 0.01, alpha=0.7) +
+  # scale_fill_viridis(name = "Temp. [C]", option = "C") +
+  scale_y_discrete(labels = c("January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"))+
+  # labs(title = 'Temperatures in Lincoln NE in 2016') +
+  theme_classic() +
+  scale_color_manual(labels = c("Winter", "Spring", "Summer", "Fall"), values = c(colors.season[4], colors.season[2], colors.season[3], colors.season[1]))+
+  scale_fill_manual(labels = c("Winter", "Spring", "Summer", "Fall"), values = c(colors.season[4], colors.season[2], colors.season[3], colors.season[1]))
+    # theme(
+    #   legend.position="none",
+    #   panel.spacing = unit(0.2, "lines"),
+    #   strip.text.x = element_text(size = 20)
+    # )
+ggformat(range_ridge_plot, y_title = "", x_title = "Temperature range (max-min ºC)")
+
+```
+\
+\
+
+
+
+### Back at daily min and max ºC.
+
+This time both temperatures are on the same plot. Boxplot marks the default statistics: the whisker is the 1st and 4th quiratiles, the line in the middle thick line is the median. The box itself spans the inner quartiles.
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.align='center', fig.width=10}
+min_max_plot <- ggplot(data=temp_sum_D, aes(factor(mo), min_temp, group = factor(mo) ))+
+  geom_boxplot(data=temp_sum_D, aes(factor(mo),  group = factor(mo) ), color = "darkblue")+
+  geom_point(size=1, alpha=0.2, pch=21,  color = "darkblue", fill = "darkblue")+
+  geom_boxplot(data=temp_sum_D, aes(factor(mo), max_temp, group = factor(mo) ), color = "darkred")+
+  geom_point(data=temp_sum_D, aes(factor(mo), max_temp, group = factor(mo) ),
+             size=1, alpha=0.2, pch=21,  color = "darkred", fill = "darkred")+
+  theme_classic()+
+  theme( axis.text.x = element_text(angle = 90, hjust = 1))+
+  facet_grid(.~y)
+ggformat(min_max_plot,y_title = "daily min and max Temp (ºC)", x_title = "Month", print = TRUE )
+
+```
+\
+\
+
+### Plotting a desired section of the data:
+
+** Add this plot with any range of the date: How? in the script add an R script chunk: 
+
+\
+`plot.desired.section(DAY.FROM.plot = 1, DAY.TO.plot = 14, YEAR.plot = 2020, MONTH.plot = 1)`
+This example above is plotted below and represents January 1-14, 2020.
+
+Where: 
+
+* `DAY.FROM.plot` = a numeric value of any day in the month to **start** the plot 
+* `DAY.TO.plot` = a numeric value of any day in the month to **end** the plot 
+* `YEAR.plot` = a numeric value of any year (2019, 2020, 2021)  
+* `MONTH.plot` = a numeric value of any month (1 = January, 2 = February, etc)
+
+\
+
+This will plot with each datapoint represented on the left side panel, and the frequency graph of all temperatures accross the selected days on the right side panel. 
+The dashed lines are: max, mean, min ºC within the entire selected timeframe. These are also marked on the secondary y axis between the visuals.
+
+\
+\
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.align='center', fig.width=7, fig.height=4}
+plot.desired.section <- function(DAY.FROM.plot, DAY.TO.plot, YEAR.plot, MONTH.plot){
+  
+  temps.meanF20_section <- temps.meanF20[c(temps.meanF20$mo==MONTH.plot & temps.meanF20$y==YEAR.plot &
+                                           c(temps.meanF20$day > DAY.FROM.plot & temps.meanF20$day < DAY.TO.plot)), ]
+  
+  section_sumMin <- min(round(temps.meanF20_section$TEMP_C, 2) )
+  section_sumMax <- max(round(temps.meanF20_section$TEMP_C, 2) )
+  section_sumMean <-  mean(round(temps.meanF20_section$TEMP_C, 2) )
+  
+  daily.HIST<-ggplot(data = temps.meanF20_section, aes(x=TEMP_C, fill = ..x.., color = ..x..))+
+    geom_histogram(bins=50)+
+    scale_fill_gradient2(low = "blue", mid = "orange", high = "red", midpoint = 15)+
+    scale_color_gradient2(low = "blue", mid = "orange", high = "red", midpoint = 15)+
+    geom_vline(xintercept = c(section_sumMin, section_sumMean, section_sumMax), linetype = "dashed",show.legend = FALSE) +
+    theme_void() + 
+    scale_x_continuous(breaks=c(round(section_sumMin, 2), round(section_sumMean,2), round(section_sumMax, 2)))+
+    theme(legend.position = "none") + 
+    coord_flip()+
+    theme(axis.title.x = element_blank(), 
+      axis.title.y = element_blank(),
+      axis.text.x = element_blank(),
+      axis.text.y = element_text(size = 10, face = "bold"))
+  
+  daily.SECTION<-ggplot(temps.meanF20_section, aes(ServerDateTime, TEMP_C))+
+    # geom_point(size=1, pch=".")+
+    geom_point( size=1, color = "black")+
+    geom_line( alpha=0.7, color = "gray")+
+    geom_hline(yintercept = c(section_sumMin, section_sumMean, section_sumMax), linetype = "dashed",show.legend = FALSE) 
+    # ylim(0, 40)+
+  ggformat(daily.SECTION, 
+           title = paste("YEAR:", YEAR.plot," --> MONTH:", MONTH.plot," --> Day:", DAY.FROM.plot, "-", DAY.TO.plot, sep=" " ), y_title = expression(Temperature~(degree*C)), x_title = "Time", print=FALSE)
+  daily.SECTION<- daily.SECTION+theme(legend.position = c(0.1, 0.8))
+  
+plot_grid(daily.SECTION, daily.HIST, ncol = 2, align = "hv", 
+      rel_widths = c(4, 1), rel_heights = c(1, 1))  
+}
+
+plot.desired.section(DAY.FROM.plot = 1, DAY.TO.plot = 14, YEAR.plot = 2020, MONTH.plot = 1)
+
+
+```
+
+
+
+
+
+## More plots! 
+
+### All temperatures together. 
+
+Here all temperature datapoints are plotted. The black line is a rolling mean/average representing smooth trend across time (check above in the script, look for something like: `zoo::rollmean(Value, k = 6*24*7` which would be rolling 7 day average here). 
+
+
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.align='center', fig.width=10}
+
+daily.pFcont<-ggplot(temps.meanF20, aes(ServerDateTime, TEMP_C, color = Season))+
+  # geom_point(size=1, pch=".")+
+  geom_point( size=0.4)+
+  ylim(0, 40)+
+  scale_fill_manual(labels = c("Winter", "Spring", "Summer", "Fall"), values = c(colors.season[4], colors.season[2], colors.season[3], colors.season[1]))+
+  geom_line(temps.meanF5d, mapping = aes(ServerDateTime, temp_0.5h), color = "black", size=3)
+
+ggformat(daily.pFcont, title = "", y_title = expression(Temperature~(degree*C)), x_title = "Time")
+
+``` 
+\
+\
+
+###  Another daily min and max plot. 
+
+The max is in red, the daily min is in blue and the middle is a pretty useful way to see the range. 
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.align='center', fig.width=10}
+
+daily.minmax<-ggplot(data = temp_sum_D, aes(x=julianDate, y=min_temp, group=factor(mo)))+
+  # geom_hline(yintercept = 100, lty=2, color="grey")+
+  # geom_hline(yintercept = 40, lty=2, color="black")+
+  # geom_hline(yintercept = 15*5, lty=2, color="orange")+
+  geom_line(aes(x=julianDate, y=max_temp), alpha=1, size=1, colour="red")+
+  geom_line(alpha=1,  size=1,colour="blue")+
+  # geom_point(aes(x=date, y=max_temp), alpha=0.5, col="red", size=1)+
+  theme_classic()+
+  geom_ribbon(aes(ymin=min_temp,ymax=max_temp), fill="grey", alpha=0.5) +
+  facet_wrap(.~y, nrow=3)
+ggformat(daily.minmax, y_title = expression(Temperature~(degree*C)), x_title = "Day in a given year (Julian Date)")
+
+
+
+```
+\
+\
+\
+\
+\
+\
+\
+\
+
+
+# additional 
+
+```{r, include = FALSE}
+
+dataF<-read.csv("/Users/kristakraskura/Github_repositories/Salt-marsh-fish-physio/Data/csv/Kraskura_combined_Study_data2021.csv", header = T)
+dataF$ServerDateTime<-mdy_hm(dataF$DateTime_GMT)
+dataF1<-dataF
+
+
+# *******************************************************
+# 1. DATA FRAME: with extracted time variables 
+# converting times and dates, extracting specific timeframes
+# new dataframe 'temps.meanF' that has all columns and additional time seperations 
+temps.meanF <- transform(dataF1,time.str = format(ServerDateTime,'%H:%M:%S'),
+                           y = year(ServerDateTime), # year (as numeric)
+                           mo = month(ServerDateTime), # month 1-12 (as numeric)
+                           day = day(ServerDateTime), # day of the month 1-31  (as numeric)
+                           hour = hour(ServerDateTime), # hour 0 - 24 (as numeric)
+                           minute = minute(ServerDateTime), # the minute in the hour 0 - 59
+                           second= second(ServerDateTime)) # the second in the minute 
+
+temps.meanF$minutes.day <- 60 * temps.meanF$hour + temps.meanF$minute # the minute in the day, 0 is midnight, 120 minute is 2 am. 
+temps.meanF<-temps.meanF[complete.cases(temps.meanF),] # remove NA, only use complete rows with data
+
+
+
+# *******************************************************
+# 2. DATA FRAME: grouped and summarized data by: month, day, year, and site
+# summary table, new data frame: temp_sum_D
+temp_sum_D <- temps.meanF %>%
+  dplyr:::group_by(mo,day, y, SiteID) %>% # group and summarize data by: month, day, year, and site
+  summarize(mean_temp = mean(Temp), # mean temp ºC
+            min_temp = min(Temp), # min temp ºC
+            max_temp = max(Temp),# max temp ºC
+            var_temp = var(Temp),# variation temp ºC
+            sd_temp = sd(Temp), # standard deviation  temp ºC
+            range_temp = max_temp - min_temp, # range: max (minus) min temp ºC
+            .groups = "keep") %>% 
+  as.data.frame()
+  
+# create a variable that is unique to each mon, day - this will be needed for plotting ranges daily
+temp_sum_D$MO_DAY<-paste(temp_sum_D$mo, "-", temp_sum_D$day, sep="") 
+
+# remove NAs:
+temp_sum_D<-temp_sum_D[complete.cases(temp_sum_D),]
+
+# new variable of time with ggplot compatible Date format
+temp_sum_D$asDate<-as.Date(paste(temp_sum_D$y, "-", temp_sum_D$mo, "-", temp_sum_D$d, sep=""), format = c("%Y-%m-%d")) # "POSIXct" "POSIXt"  --> "Date"
+
+# adding Julian date (days 1-365) to the dataframe
+temp_sum_D$julianDate<-yday(temp_sum_D$asDate)  # Date --> numeric (as Julian)
+
+
+
+
+
+
+# *******************************************************
+# DATA FRAME: extracting specific months and temperatures
+# 6th - 15th of Oct in 2019 
+temps.meanF20_section.V2 <- temps.meanF[
+  c( # a combo of: 
+    c(temps.meanF$mo==10 & # october 
+          temps.meanF$y==2019 & # in 2019 
+          c(temps.meanF$day >= 6 & temps.meanF$day < 15)) & # days between 6th and 15th of the months
+    c(temps.meanF$SiteID=="SITE3" | temps.meanF$SiteID=="SITE4") # and all that at sites 3 and 4
+  ),
+]
+  
+
+```
+
+\
+\
+
+# Daily variation plots at specific selected time : 
+
+
+```{r}
+# *******************************************************
+daily.p1F.V2 <- ggplot(temps.meanF[c((temps.meanF$mo == 9 | temps.meanF$mo == 10) & temps.meanF$SiteID=="SITE3"),] # selected times = sept & oct in site 3
+                       , aes(minutes.day/60, Temps)) +
+  ylim(10, 33)+
+  annotate("rect", xmin=0, xmax=420/60, ymin=-Inf, ymax=Inf, alpha=0.5, fill="grey90") +
+  annotate("rect", xmin=1020/60, xmax=1440/60, ymin=-Inf, ymax=Inf, alpha=0.5, fill="grey90") +
+  # geom_hline(yintercept = 27, color = "#BE647D", lty=1, lwd = 1)+
+  # geom_hline(yintercept = 17, color = "#00C59E", lty=1, lwd = 1)+
+  # geom_hline(yintercept = 12, color = "#00518C", lty=1, lwd = 1)+
+  # geom_hline(yintercept = 22, color = "#DBA11C", lty=1, lwd = 1)+
+  # geom_hline(yintercept = 32, color = "#BE647D", lty=2, lwd =1, alpha = 0.7)+
+  geom_line(aes(minutes.day/60, Temp, group = interaction(y, mo, day)), color = "grey10", size=0.2, alpha=1)
+
+# custom formatting: 
+ggformat(daily.p1F.V2, title = "Daily trends: Sept & Oct at site #3",
+         y_title = expression(Temperature~(degree*C)),
+         x_title = "Time in the day (h)", size_text = 12)
+
+# un-comment this to make y - axis blank (good for bombining plots)
+# daily.p1F.V2 <- daily.p1F.V2 + theme(legend.position = "top",
+#                                      axis.text.y = element_blank(),
+#                                      axis.title.y = element_blank())
+
+
+# same as above, just site # 4
+daily.p1F.V1 <- ggplot(temps.meanF[c((temps.meanF$mo == 9 | temps.meanF$mo == 10) & temps.meanF$SiteID=="SITE4"),] , aes(minutes.day/60, Temps))+
+  ylim(5, 35)+
+  # facet_wrap(.~SiteID)+
+  annotate("rect", xmin=0, xmax=420/60, ymin=-Inf, ymax=Inf, alpha=0.5, fill="grey90") +
+  annotate("rect", xmin=1020/60, xmax=1440/60, ymin=-Inf, ymax=Inf, alpha=0.5, fill="grey90") +
+  # geom_hline(yintercept = 27, color = "#BE647D", lty=1, lwd = 1)+
+  # geom_hline(yintercept = 17, color = "#00C59E", lty=1, lwd = 1)+
+  # geom_hline(yintercept = 12, color = "#00518C", lty=1, lwd = 1)+
+  # geom_hline(yintercept = 22, color = "#DBA11C", lty=1, lwd = 1)+
+  # geom_hline(yintercept = 32, color = "#BE647D", lty=2, lwd =1, alpha = 0.7)+
+  geom_line(aes(minutes.day/60, Temp, group = interaction(y, mo, day)), color = "grey10", size=0.2, alpha=1)
+ggformat(daily.p1F.V1, title = "Daily trends: Sept & Oct at site #4",
+         y_title = expression(Temperature~(degree*C)),
+         x_title = "Time in the day (h)", size_text = 12)
+
+daily.p1F.V1 <- daily.p1F.V1 + theme(legend.position = "top",
+                                     axis.text.y = element_blank(),
+                                     axis.title.y = element_blank())
+
+
+```
+
+\
+\
+
+# The continuous daily trends at specific selected time 
+
+
+```{r}
+daily.SECTION.V1<-ggplot(temps.meanF20_section.V2[temps.meanF20_section.V2$SiteID == "SITE4",], aes(ServerDateTime, Temp))+
+  # geom_point(size=1, pch=".")+
+  # geom_hline(yintercept = 27, color = "#BE647D", lty=1, lwd = 0.2, alpha=)+
+  # geom_hline(yintercept = 17, color = "#00C59E", lty=1, lwd = 1)+
+  # geom_hline(yintercept = 12, color = "#00518C", lty=1, lwd = 1)+
+  # geom_hline(yintercept = 22, color = "#DBA11C", lty=1, lwd = 1)+
+  # geom_hline(yintercept = 32, color = "#BE647D", lty=2, lwd =1, alpha = 0.7)+
+  ylim(5, 35)+
+  geom_point( size=1, pch=".", color = "black")+
+  geom_line( alpha=1, color = "black", lwd=0.5)
+
+# formatting
+ggformat(daily.SECTION.V1,
+         title = "2019 at Site #4",
+         y_title = expression(Temperature~(degree*C)),
+         x_title = "Time", print=F, size_text = 12)
+# daily.SECTION.V1<- daily.SECTION.V1+theme(legend.position = c(0.1, 0.8))
+
+
+
+# same as above: 
+daily.SECTION.V2<-ggplot(temps.meanF20_section.V2[temps.meanF20_section.V2$SiteID == "SITE3",], aes(ServerDateTime, Temp))+
+  # geom_point(size=1, pch=".")+
+  # geom_hline(yintercept = 27, color = "#BE647D", lty=1, lwd = 0.2, alpha=)+
+  # geom_hline(yintercept = 17, color = "#00C59E", lty=1, lwd = 1)+
+  # geom_hline(yintercept = 12, color = "#00518C", lty=1, lwd = 1)+
+  # geom_hline(yintercept = 22, color = "#DBA11C", lty=1, lwd = 1)+
+  # geom_hline(yintercept = 32, color = "#BE647D", lty=2, lwd =1, alpha = 0.7)+
+  ylim(5, 35)+
+  geom_point( size=1, pch=".", color = "black")+
+  geom_line( alpha=1, color = "black", lwd=0.5)
+ggformat(daily.SECTION.V2,
+         title = "2019 at Site #3",
+         y_title = expression(Temperature~(degree*C)),
+         x_title = "Time", print=F, size_text = 12)
+# daily.SECTION.V2<- daily.SECTION.V2+theme(legend.position = c(0.1, 0.8))
+
+
+daily.pFcont<-ggplot(temps.meanF, aes(ServerDateTime, Temp, color = as.numeric(as.factor(SiteID))))+
+  geom_point( size=0.4,  pch=".", show.legend = FALSE)+
+  scale_color_gradient(low = "grey", high = "grey50")+
+  ylim(0, 40)+
+  # facet_wrap(.~SiteID)+
+  # annotate("segment", x = as.POSIXct("2020-05-01", tz = "UTC"), xend = as.POSIXct("2020-10-01", tz = "UTC"), y = 32, yend = 32, color = "#BE647D", lwd=1, lty="dotted")+
+  # annotate("segment", x = as.POSIXct("2021-05-01", tz = "UTC"), xend = as.POSIXct("2021-10-01", tz = "UTC"), y = 32, yend = 32, color = "#BE647D", lwd=2, lty="dotted")+
+  annotate("segment", x = as.POSIXct("2020-05-01", tz = "UTC"), xend = as.POSIXct("2020-10-01", tz = "UTC"), y = 27, yend = 27, color = "#BE647D", lwd=2)+
+  annotate("segment", x = as.POSIXct("2020-05-01", tz = "UTC"), xend = as.POSIXct("2020-10-01", tz = "UTC"), y = 22, yend = 22, color = "#DBA11C", lwd=2)+
+  # annotate("segment", x = as.POSIXct("2021-05-01", tz = "UTC"), xend = as.POSIXct("2021-09-30", tz = "UTC"), y = 27, yend = 27, color = "#BE647D", lwd=2)+
+  # annotate("segment", x = as.POSIXct("2021-05-01", tz = "UTC"), xend = as.POSIXct("2021-09-30", tz = "UTC"), y = 22, yend = 22, color = "#DBA11C", lwd=2)+
+  annotate("segment", x = as.POSIXct("2020-01-01", tz = "UTC"), xend = as.POSIXct("2020-06-01", tz = "UTC"), y = 17, yend = 17, color = "#00C59E", lwd=2)+
+  # annotate("segment", x = as.POSIXct("2021-02-20", tz = "UTC"), xend = as.POSIXct("2021-05-15", tz = "UTC"), y = 17, yend = 17, color = "#00C59E", lwd=2)+
+  annotate("segment", x = as.POSIXct("2019-11-01", tz = "UTC"), xend = as.POSIXct("2020-04-01", tz = "UTC"), y = 12, yend = 12, color = "#00518C", lwd=2)
+  # annotate("segment", x = as.POSIXct("2020-11-12", tz = "UTC"), xend = as.POSIXct("2021-03-20", tz = "UTC"), y = 12, yend = 12, color = "#00518C", lwd=2)
+ggformat(daily.pFcont, title = "", y_title = expression(Temperature~(degree*C)), x_title = "Time", size_text = 12)
+  
+
+  # ggsave(filename = "/Users/kristakraskura/Desktop/BOX/UCSB/Research/Carpinteria marsh fish /DataAnalysis/PLOTS/Figure1_Field_static.png", daily.pFcont, width = 5, height = 3)
+  # 
+  plot_grid(daily.SECTION.V1, daily.p1F.V1, 
+            daily.SECTION.V2, daily.p1F.V2,
+            ncol = 2, align = "hv",
+            rel_widths = c(2, 1.2), rel_heights = c(1, 1))
+  # %>% 
+  # ggsave(filename = "/Users/kristakraskura/Desktop/BOX/UCSB/Research/Carpinteria marsh fish /DataAnalysis/PLOTS/Figure1_Field_variable.png", width = 6, height = 5)
+  
+  
+  
+  # plot_grid(daily.p,
+  #           ncol = 1, align = "hv")
+  # %>% 
+  #   ggsave(filename = "/Users/kristakraskura/Desktop/BOX/UCSB/Research/Carpinteria marsh fish /DataAnalysis/PLOTS/Figure1_Lab_static.png", width = 3.5, height = 4)
+  # 
+  
+  
+  
+  
+  # ************** 
+  # ************** 
+  # ************** 
+  # ADDITIONAL MISC temp PLOTS: 
+  temp_sum_D$y<-as.factor(temp_sum_D$y)
+  
+  daily.p1F<- ggplot(temps.meanF[c((temps.meanF$mo == 9 | temps.meanF$mo == 11)),] , aes(minutes.day/60, Temps))+
+    ylim(0, 35)+
+    facet_wrap(.~SiteID)+
+    annotate("rect", xmin=0, xmax=420/60, ymin=-Inf, ymax=Inf, alpha=0.5, fill="grey90") +
+    annotate("rect", xmin=1020/60, xmax=1440/60, ymin=-Inf, ymax=Inf, alpha=0.5, fill="grey90") +
+    geom_hline(yintercept = 27, color = "#BE647D", lty=1, lwd = 1)+
+    geom_hline(yintercept = 17, color = "#00C59E", lty=1, lwd = 1)+
+    geom_hline(yintercept = 12, color = "#00518C", lty=1, lwd = 1)+
+    geom_hline(yintercept = 22, color = "#DBA11C", lty=1, lwd = 1)+
+    geom_hline(yintercept = 32, color = "#BE647D", lty=2, lwd =1, alpha = 0.7)+
+    geom_line(aes(minutes.day/60, Temp, group = interaction(y, mo, day)), color = "grey10", size=0.2, alpha=1)
+  ggformat(daily.p1F, title = "", y_title = expression(Temperature~(degree*C)), x_title = "Time in the day (h)")
+  daily.p1F <- daily.p1F + theme(legend.position = "top")
+  
+  
+
+
+
+
+
+```
+
+
+
+
+\
+\
+\
+\
+
