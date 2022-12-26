@@ -63,13 +63,12 @@ data$tank <- ifelse(data$Label == "Probe1", 1,
 # check data for the quality
 data[which(is.na(data$Value)),] # only AIR temp, take out 
 data<-data[-c(which(is.na(data$Value))),] 
-data<-data[, c(2, 3, 5, 6, 7)]
+data<-data[, c(2, 3, 4, 6, 7)]
 names(data)<-c("Label", "TEMP", "DateTime", "treatm", "tank" )
 head(data)
 
 # data$Date = as.Date(temps.mean$ServerTime, format=c('%m-%d-%y %H:%M')) 
-data$DateTime<-as.POSIXct(data$DateTime, format="%Y-%m-%d %H:%M:%S") # server time is eastern time "America/New_York"
-data$LocalDateTime<- data$DateTime - hours(3) # add 3 hours to make time local to Santa Barbara, the study site
+data$LocalDateTime<-as.POSIXct(data$DateTime, format="%Y-%m-%d %H:%M:%S", tz = "America/Los_Angeles") # server time is eastern time "America/New_York"
 # class(temps.mean$LocalDateTime)
 
 # ********************************
@@ -87,8 +86,8 @@ dataLab <- dataLab[-which(dataLab$Label == "Probe16" & dataLab$mo == 11 & dataLa
 dataLab<-dataLab[-c(which(dataLab$treatm == "AIR")),]
 dataLab$SiteID<-"Lab"
   
-# separate oeparate c treatments & applying custom function to get some running means and daily temp stats (min, max, mean.. )dataLab.S<-dataMutateM
-eans(dataLab[!c(dataLab$treatm=="V1" | dataLab$treatm=="V2"), ])
+# separate out static treatments & applying custom function to get some running means and daily temp stats (min, max, mean.. )
+dataLab.S<-dataMutateMeans(dataLab[!c(dataLab$treatm=="V1" | dataLab$treatm=="V2"), ])
 # separate out variability treatments 
 dataLab.V1<-dataMutateMeans(dataLab[c(dataLab$treatm=="V1"), ]) 
 dataLab.V2<-dataMutateMeans(dataLab[c(dataLab$treatm=="V2"), ]) # stochastic variable treatment
@@ -99,7 +98,10 @@ dataLab.V1.plot <- extractTimeFrame(data = dataLab.V1, year = 2019, minMo = 10, 
 dataLab.V2.plot <- extractTimeFrame(data = dataLab.V2, year = 2019, minMo = 10, maxMo = 10, minDay = 19, maxDay = 26)  # stochastic variable treatment 
 dataLab.S.plot <- extractTimeFrame(data = dataLab.S, year = 2019, minMo = 10, maxMo = 10, minDay = 19, maxDay = 26) 
 
-
+# datesets of test days. 
+dataLab.test.days <- extractTimeFrame(data = dataLab.V1V2, year = 2019, minMo = 11, maxMo = 11, minDay = 11, maxDay = 31)  # regular variable treatment 
+dataLab.test.days<-dataLab.test.days[c(dataLab.test.days$treatm=="V1" | dataLab.test.days$treatm=="V2"), ]
+write_csv(dataLab.test.days, file = "./Data/Lab_TestDaytemps_2019.csv")
 
 ## Figure i) : daily var all tanks ---------------
 daily.p.ALL <- ggplot(dataLab, aes(minutes.day, TEMP, group = interaction(treatm), color = treatm))+
