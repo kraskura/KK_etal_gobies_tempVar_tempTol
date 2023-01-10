@@ -61,7 +61,7 @@ daily.p1.Kelp.V2 <- ggplot(dataKelp.V2 , aes(minutes.day/60, TEMP))+
   annotate("rect", xmin=0, xmax=420/60, ymin=-Inf, ymax=Inf, alpha=0.5, fill="grey90") +
   annotate("rect", xmin=1020/60, xmax=1440/60, ymin=-Inf, ymax=Inf, alpha=0.5, fill="grey90") +
   # geom_hline(yintercept = 27, color = "#BE647D", lty=1, lwd = 1, alpha = 0.7)+
-  geom_hline(yintercept = 17, color = "#00C59E", lty=1, lwd = 1, alpha = 0.7)+
+  geom_hline(yintercept = 17, color = "#008A60", lty=1, lwd = 1, alpha = 0.7)+
   # geom_hline(yintercept = 12, color = "#00518C", lty=1, lwd = 1, alpha = 0.7)+
   # geom_hline(yintercept = 22, color = "#DBA11C", lty=1, lwd = 1, alpha = 0.7)+
   ylim(5, 35)+
@@ -77,7 +77,7 @@ ggformat(daily.p1.Kelp.V2, title = "", y_title = expression(Temperature~(degree*
 Kelp.SECTION.V2<-ggplot(dataKelp.V2.1week, aes(LocalDateTime,  TEMP, group = interaction(mo, day)))+
   ylim(5, 35)+
   geom_point( size=1, pch=".", color = "black")+
-  geom_hline(yintercept = 17, color = "#00C59E", lty=1, lwd = 1, alpha = 0.7)+
+  geom_hline(yintercept = 17, color = "#008A60", lty=1, lwd = 1, alpha = 0.7)+
   geom_line( alpha=1, color = "black", lwd=0.5)
 ggformat(Kelp.SECTION.V2, title = "", y_title = expression(Temperature~(degree*C)), x_title = "Time", print=F, size_text = 12)
 Kelp.SECTION.V2<- Kelp.SECTION.V2+theme(legend.position = c(0.1, 0.8))
@@ -89,7 +89,7 @@ daily.p1.Kelp.V1 <- ggplot(dataKelp.V1 , aes(minutes.day/60, TEMP))+
   annotate("rect", xmin=0, xmax=420/60, ymin=-Inf, ymax=Inf, alpha=0.5, fill="grey90") +
   annotate("rect", xmin=1020/60, xmax=1440/60, ymin=-Inf, ymax=Inf, alpha=0.5, fill="grey90") +
   ylim(5, 35)+
-  geom_hline(yintercept = 17, color = "#00C59E", lty=1, lwd = 1, alpha = 0.7)+
+  geom_hline(yintercept = 17, color = "#008A60", lty=1, lwd = 1, alpha = 0.7)+
   # geom_hline(yintercept = 32, color = "#BE647D", lty=2, lwd =1, alpha = 0.7)+
   geom_line(aes(minutes.day/60, TEMP, group = interaction(y, mo, day)), color = "grey10", size=0.2, alpha=1)
 ggformat(daily.p1.Kelp.V1, title = "", y_title = expression(Temperature~(degree*C)), x_title = "Time in the day (h)", size_text = 12)
@@ -101,7 +101,7 @@ ggformat(daily.p1.Kelp.V1, title = "", y_title = expression(Temperature~(degree*
 Kelp.SECTION.V1<-ggplot(dataKelp.V1.1week, aes(LocalDateTime,  TEMP, group = interaction(mo, day)))+
   ylim(5, 35)+
   geom_point( size=1, pch=".", color = "black")+
-  geom_hline(yintercept = 17, color = "#00C59E", lty=1, lwd = 1, alpha = 0.7)+
+  geom_hline(yintercept = 17, color = "#008A60", lty=1, lwd = 1, alpha = 0.7)+
   geom_line( alpha=1, color = "black", lwd=0.5)
 ggformat(Kelp.SECTION.V1, title = "", y_title = expression(Temperature~(degree*C)), x_title = "Time", print=F, size_text = 12)
 Kelp.SECTION.V1<- Kelp.SECTION.V1+theme(legend.position = c(0.1, 0.8))
@@ -118,8 +118,8 @@ daily.pFcontKelp<-ggplot(dataKelp[dataKelp$y == 2019 | dataKelp$y == 2020, ], ae
   annotate("segment", x = as.POSIXct("2020-05-01"), xend = as.POSIXct("2020-10-01"), y = 22, yend = 22, color = "#DBA11C", lwd=2)+
   # annotate("segment", x = as.POSIXct("2021-05-01"), xend = as.POSIXct("2021-09-30"), y = 27, yend = 27, color = "#BE647D", lwd=2)+
   # annotate("segment", x = as.POSIXct("2021-05-01"), xend = as.POSIXct("2021-09-30"), y = 22, yend = 22, color = "#DBA11C", lwd=2)+
-  annotate("segment", x = as.POSIXct("2020-01-01"), xend = as.POSIXct("2020-06-01"), y = 17, yend = 17, color = "#00C59E", lwd=2)+
-  # annotate("segment", x = as.POSIXct("2021-02-20"), xend = as.POSIXct("2021-05-15"), y = 17, yend = 17, color = "#00C59E", lwd=2)+
+  annotate("segment", x = as.POSIXct("2020-01-01"), xend = as.POSIXct("2020-06-01"), y = 17, yend = 17, color = "#008A60", lwd=2)+
+  # annotate("segment", x = as.POSIXct("2021-02-20"), xend = as.POSIXct("2021-05-15"), y = 17, yend = 17, color = "#008A60", lwd=2)+
   annotate("segment", x = as.POSIXct("2019-11-01"), xend = as.POSIXct("2020-04-01"), y = 12, yend = 12, color = "#00518C", lwd=2)
 # annotate("segment", x = as.POSIXct("2020-11-12"), xend = as.POSIXct("2021-03-20"), y = 12, yend = 12, color = "#00518C", lwd=2)
 ggformat(daily.pFcontKelp, title = "", y_title = expression(Temperature~(degree*C)), x_title = "Time", size_text = 12)

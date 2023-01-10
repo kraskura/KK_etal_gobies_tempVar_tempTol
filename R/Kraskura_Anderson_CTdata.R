@@ -6,9 +6,7 @@ library(lubridate)
 library(data.table)
 library(zoo)
 library(ggrepel)
-
 library(lattice)
-
 library(lme4)
 library(car)
 library(emmeans)
@@ -26,8 +24,8 @@ BICdelta<-function(BICtable){
 }
 
 # set colors 
-cols.klab<- c("#00518C", "#7FADF1", "#DBA11C", "#673F00", "#3F4756", "#A3ABBD")  # 27, 22, 17, 12, V1, V2
-# cols.tide<-c("#3D459F", "#673F00", "#001041")
+cols.klab<- c("#00518C", "#008A60", "#DBA11C", "#BE647D", "black", "#A3ABBD", "darkred")  # 27, 22, 17, 12, V1, V2
+# cols.tide<-c("#3D459F", "#BE647D", "#001041")
 
 
 # DATA PREP -----
@@ -42,8 +40,24 @@ data<-data %>%
          DateTime = ymd_hms(paste(Date, TimeDay, sep = " "), tz =  "America/Los_Angeles")) %>% 
   mutate(Date = ymd(Date), 
          K_cond = mass_mg*100/TL_mm^3)
+
 data$temp<-as.numeric(as.character(data$temp_treatment)) # NA are variable treatments 
 data$tank<-factor(data$tank) # NA are variable treatments 
+
+# lab tests
+data.min<-data[c(data$Field_Lab == "LAB" & data$Test=="CTmin" ),] # all LAB CTmin
+data.max<-data[c(data$Field_Lab == "LAB" & data$Test=="CTmax"),] # all LAB CTmax
+data.static.max<-data[c(data$Field_Lab == "LAB" & data$Test=="CTmax" & data$Stat_Var == "static"),] # used for CT min and max stats 
+data.static.min<-data[c(data$Field_Lab == "LAB" & data$Test=="CTmin" & data$Stat_Var == "static"),] # used for CT min and max stats 
+
+# variables 
+data.VARmin<-data[data$Stat_Var == "variable" & data$Test == "CTmin",  ]
+data.VARmax<-data[data$Stat_Var == "variable" & data$Test == "CTmax",  ]
+
+#field tests:
+data.minF<-data[c(data$Field_Lab == "FIELD" & data$Test=="CTmin"),] # all Field CTmax
+data.maxF<-data[c(data$Field_Lab == "FIELD" & data$Test=="CTmax"),] # all Field CTmin
+
 
 # import field temps to get daily min and max temps.
 fieldTempsJul<- read.csv("./Data/SiteTempsJul.csv")
@@ -88,7 +102,6 @@ data.sum<-data %>%
             mean_TL = mean(TL_mm, na.rm = TRUE), sd_TL = sd(TL_mm, na.rm = TRUE), min_TL = min(TL_mm, na.rm = TRUE), max_TL = max(TL_mm, na.rm = TRUE),
             n=length(!is.na(temp_tolerance))) %>% 
   as.data.frame()
-
 
 
 ## 2. Weights (lab 2019 only): -----------
@@ -149,21 +162,10 @@ growth.mod.mean<-data2.sum.w %>%
 boxplot(temp_tolerance ~ TestID, data = data[data$Test == "CTmin",])
 boxplot(temp_tolerance ~ TestID, data = data[data$Test == "CTmax",])
 
-## 1. LAB: growth ----- 
-
+## 1. [suppl 2] LAB: growth ----- 
 # mass in mg <<!  this is less reliable because fish are so small and the water residual error can overpower the mass. 
-mod.poly.growth <- lm(GR_mg_d ~ poly(temp,2), data = growth.mod.data)
-# plot(mod.poly.growth)
-predict(mod.poly.growth)
-summary(mod.poly.growth)
-
-pred.datamg<-as.data.frame(expand.grid(temp =seq(12, 27, 0.2)))
-pred.datamg$pred.GR<-predict(mod.poly.growth, newdata = pred.datamg)
-pred.datamg$pred.GR.se<-predict(mod.poly.growth, newdata = pred.datamg, se.fit = TRUE)[[2]]
-
 # total length in mm 
 mod.poly.growthmm <- lm(GR_mm_d ~ poly(temp,2), data = growth.mod.data)
-# plot(mod.poly.growthmm)
 predict(mod.poly.growthmm)
 summary(mod.poly.growthmm)
 
@@ -171,33 +173,30 @@ pred.datamm<-as.data.frame(expand.grid(temp =seq(12, 27, 0.2)))
 pred.datamm$pred.GRmm<-predict(mod.poly.growthmm, newdata = pred.datamm)
 pred.datamm$pred.GRmm.se<-predict(mod.poly.growthmm, newdata = pred.datamm, se.fit = TRUE)[[2]]
 
-
-
-
-
-## 2. LAB: Static temp tests -- CTmax and CTmin (continuous temp predictor) --------
+## 2. [suppl 1a] LAB: Static temp tests -- CTmax and CTmin (continuous temp predictor) --------
 # mixed model using tank as a random effect
-# # subsets 
 # data<-data[data$Phys.cond =="NOTFED", ] # only fish that were not fed. 
 # dataFED<-data[data$Phys.cond =="FED", ] 
 
 # fish that were FED are included in this run. 
-data.static.max<-data[c(data$Field_Lab == "LAB" & data$Test=="CTmax" & !c(data$temp_treatment=="V1" | data$temp_treatment=="V2")),] # used for CT min and max stats 
 mod1<-lmer(temp_tolerance ~  temp + (1|tank), REML = FALSE, data = data.static.max)
-# plot(mod1)
-qqmath(mod1)
-summary(mod1)
+mod1.b<-lmer(temp_tolerance ~  temp + TL_mm + (1|tank), REML = FALSE, data = data.static.max)
 
-data.static.min<-data[c(data$Field_Lab == "LAB" & data$Test=="CTmin" & !c(data$temp_treatment=="V1" | data$temp_treatment=="V2")),] # used for CT min and max stats 
+BIC(mod1, mod1.b)
+qqmath(mod1.b)
+summary(mod1.b)
+plot(resid(mod1.b))
+
 mod1min<-lmer(temp_tolerance ~  temp + (1|tank), REML = FALSE, data = data.static.min) # singular fit for the random effects
+mod1min.b<-lmer(temp_tolerance ~  temp + TL_mm + (1|tank), REML = FALSE, data = data.static.min) # singular fit for the random effects
 # plot(mod1min)
-qqmath(mod1min)
-summary(mod1min)
-
+qqmath(mod1min.b)
+summary(mod1min.b)
+plot(resid(mod1min.b))
 
 # type II anovas 
-car::Anova(mod1, "II")
-car::Anova(mod1min, "II")
+car::Anova(mod1.b, "II")
+car::Anova(mod1min.b, "II")
 
 # for predicting, plotting the data
 pred.dataCT<-as.data.frame(expand.grid(temp =seq(12, 27, 0.2)))
@@ -209,522 +208,120 @@ predCTminStatic<-predictInterval(mod1min, data.static.min, which = "fixed",inclu
 predCTmaxStatic$temp<-data.static.max$temp
 predCTminStatic$temp<-data.static.min$temp
 
-## 2. FIELD + LAB: stats with ∆Temp  -----------
-# dat.ctF$DIFCT<-dat.ctF$mean_CTmax - dat.ctF$mean_CTmin
-### i) Variable treatments only -----
-data.VARmin<-data[c(data$Field_Lab == "FIELD" | data$treatment == "V1" | data$treatment == "V2") & data$Test == "CTmin",  ]
-data.VARmax<-data[c(data$Field_Lab == "FIELD" | data$treatment == "V1" | data$treatment == "V2") & data$Test == "CTmax",  ]
+## 3. [suppl 1b] FIELD + LAB: Variable treatments only  -----------
+# dat.$DIFCT<-dat.ctF$mean_CTmax - dat.ctF$mean_CTmin
 
-# just difference between tests: 
-mod.envT.CTmin.D0<-lm(temp_tolerance ~ TestID,  data = data.VARmin)
-car::Anova(mod.envT.CTmin.D0)
-mod.envT.CTmax.D0<-lm(temp_tolerance ~ TestID,  data = data.VARmax)
-car::Anova(mod.envT.CTmax.D0)
+# difference between tests: 
+mod.var.CTmin<-lm(temp_tolerance ~ TestID, data = data.VARmin)
+mod.var.CTmin.b<-lm(temp_tolerance ~ TL_mm + TestID, data = data.VARmin)
+BIC(mod.var.CTmin, mod.var.CTmin.b)
+car::Anova(mod.var.CTmin.b)
+  
+mod.var.CTmax<-lm(temp_tolerance ~ TestID, data = data.VARmax)
+mod.var.CTmax.b<-lm(temp_tolerance ~ TL_mm + TestID, data = data.VARmax)
+BIC(mod.var.CTmax, mod.var.CTmax.b)
+car::Anova(mod.var.CTmax)
 
-# CTmin -- All variability tests together, different explanatory variables:
-mod.envT.CTmin.D1<-lmer(temp_tolerance ~ Temp_test_start + (1|TestID), data =data.VARmin, REML = FALSE)
-mod.envT.CTmin.D2<-lmer(temp_tolerance ~ delta.T + (1|TestID), data =data.VARmin, REML = FALSE) 
-mod.envT.CTmin.D3<-lmer(temp_tolerance ~ TimeDay2 + (1|TestID),data =data.VARmin, REML = FALSE)
-
-mod.envT.CTmin.D4<-lmer(temp_tolerance ~ Temp_test_start + delta.T + (1|TestID), data =data.VARmin, REML = FALSE)
-mod.envT.CTmin.D5<-lmer(temp_tolerance ~ Temp_test_start + TimeDay2 + (1|TestID), data =data.VARmin, REML = FALSE)
-mod.envT.CTmin.D6<-lmer(temp_tolerance ~ delta.T + TimeDay2 + (1|TestID), data =data.VARmin, REML = FALSE) 
-mod.envT.CTmin.D7<-lmer(temp_tolerance ~ Temp_test_start + delta.T + TimeDay2 + (1|TestID), data =data.VARmin, REML = FALSE) 
-
-mod.envT.CTmin.D8<-lmer(temp_tolerance ~ min.Env.Temp + (1|TestID), data = data.VARmin, REML = FALSE)
-mod.envT.CTmin.D9<-lmer(temp_tolerance ~ max.Env.Temp + (1|TestID), data = data.VARmin, REML = FALSE)
-mod.envT.CTmin.D10<-lmer(temp_tolerance ~ mean.Env.Temp + (1|TestID), data = data.VARmin, REML = FALSE)
-mod.envT.CTmin.D11<-lmer(temp_tolerance ~ mean.Env.Temp + delta.T + (1|TestID), data = data.VARmin, REML = FALSE)
-mod.envT.CTmin.D12<-lmer(temp_tolerance ~ mean.Env.Temp + Temp_test_start + (1|TestID), data = data.VARmin, REML = FALSE)
-
-BICdelta(BIC(mod.envT.CTmin.D1, mod.envT.CTmin.D2, mod.envT.CTmin.D3,
-    mod.envT.CTmin.D4, mod.envT.CTmin.D5, mod.envT.CTmin.D6, mod.envT.CTmin.D7,
-    mod.envT.CTmin.D8, mod.envT.CTmin.D9, mod.envT.CTmin.D10, 
-    mod.envT.CTmin.D11, mod.envT.CTmin.D12)) # 
-
-
-# CTmax -- All variability tests together, different explanatory variables:
-mod.envT.CTmax.D1<-lmer(temp_tolerance ~ Temp_test_start + (1|TestID), data =data.VARmax, REML = FALSE)
-mod.envT.CTmax.D2<-lmer(temp_tolerance ~ delta.T + (1|TestID), data =data.VARmax, REML = FALSE) 
-mod.envT.CTmax.D3<-lmer(temp_tolerance ~ TimeDay2 + (1|TestID),data =data.VARmax, REML = FALSE)
-
-mod.envT.CTmax.D4<-lmer(temp_tolerance ~ Temp_test_start + delta.T + (1|TestID), data =data.VARmax, REML = FALSE)
-mod.envT.CTmax.D5<-lmer(temp_tolerance ~ Temp_test_start + TimeDay2 + (1|TestID), data =data.VARmax, REML = FALSE)
-mod.envT.CTmax.D6<-lmer(temp_tolerance ~ delta.T + TimeDay2 + (1|TestID), data =data.VARmax, REML = FALSE) 
-mod.envT.CTmax.D7<-lmer(temp_tolerance ~ Temp_test_start + delta.T + TimeDay2 + (1|TestID), data =data.VARmax, REML = FALSE) 
-
-mod.envT.CTmax.D8<-lmer(temp_tolerance ~ min.Env.Temp + (1|TestID), data = data.VARmax, REML = FALSE)
-mod.envT.CTmax.D9<-lmer(temp_tolerance ~ max.Env.Temp + (1|TestID), data = data.VARmax, REML = FALSE)
-mod.envT.CTmax.D10<-lmer(temp_tolerance ~ mean.Env.Temp + (1|TestID), data = data.VARmax, REML = FALSE)
-mod.envT.CTmax.D11<-lmer(temp_tolerance ~ mean.Env.Temp + delta.T + (1|TestID), data = data.VARmax, REML = FALSE)
-mod.envT.CTmax.D12<-lmer(temp_tolerance ~ mean.Env.Temp + Temp_test_start + (1|TestID), data = data.VARmax, REML = FALSE)
-
-
-BICdelta(BIC(mod.envT.CTmax.D1, mod.envT.CTmax.D2, mod.envT.CTmax.D3,
-    mod.envT.CTmax.D4, mod.envT.CTmax.D5, mod.envT.CTmax.D6, mod.envT.CTmax.D7,
-    mod.envT.CTmax.D8, mod.envT.CTmax.D9, mod.envT.CTmax.D10, 
-    mod.envT.CTmax.D11, mod.envT.CTmax.D12)) # mod.envT.CTmax
-
-# Stats 
-summary(mod.envT.CTmax.D10)
-summary(mod.envT.CTmin.D10)
-
-car:::Anova(mod.envT.CTmin.D10, "II")
-car:::Anova(mod.envT.CTmax.D10, "II")
-
-pred.dataVAR<-as.data.frame(expand.grid( mean.Env.Temp = seq(12, 30, 2)))
-pred.dataVAR$predCTmin<-predict(mod.envT.CTmin.D10, newdata = pred.dataVAR, re=NA)
-pred.dataVAR$predCTmax<-predict(mod.envT.CTmax.D10, newdata = pred.dataVAR, re=NA)
-
-
-### ii)  NOT used: all tests, static and variable.  max, mean, min, delta, start temp, start daytime -----
+## 4. [main 2]  all tests, static and variable.  max, mean, min, delta, start temp, start daytime -----
 # CT min tests 
 model.CTmin.0<-lmer(temp_tolerance ~ 1  + (1|TestID), data = data[data$Test== "CTmin", ], REML = FALSE)
 model.CTmin.1<-lmer(temp_tolerance ~ max.Env.Temp + (1|TestID), data = data[data$Test== "CTmin", ], REML = FALSE) 
+model.CTmin.1.b<-lmer(temp_tolerance ~ max.Env.Temp + TL_mm + (1|TestID), data = data[data$Test== "CTmin", ], REML = FALSE) 
 model.CTmin.2<-lmer(temp_tolerance ~ min.Env.Temp + (1|TestID), data = data[data$Test== "CTmin", ], REML = FALSE) 
+model.CTmin.2.b<-lmer(temp_tolerance ~ min.Env.Temp + TL_mm + (1|TestID), data = data[data$Test== "CTmin", ], REML = FALSE) 
 model.CTmin.3<-lmer(temp_tolerance ~ mean.Env.Temp + (1|TestID), data = data[data$Test== "CTmin", ], REML = FALSE) 
+model.CTmin.3.b<-lmer(temp_tolerance ~ mean.Env.Temp +TL_mm +  (1|TestID), data = data[data$Test== "CTmin", ], REML = FALSE) 
 model.CTmin.4<-lmer(temp_tolerance ~ Temp_test_start + (1|TestID), data = data[data$Test== "CTmin", ], REML = FALSE) 
+model.CTmin.4.b<-lmer(temp_tolerance ~ Temp_test_start + TL_mm + (1|TestID), data = data[data$Test== "CTmin", ], REML = FALSE) 
 model.CTmin.5<-lmer(temp_tolerance ~ delta.T + (1|TestID), data = data[data$Test== "CTmin", ], REML = FALSE) 
+model.CTmin.5.b<-lmer(temp_tolerance ~ delta.T + TL_mm + (1|TestID), data = data[data$Test== "CTmin", ], REML = FALSE) 
 model.CTmin.6<-lmer(temp_tolerance ~ TimeDay2 + (1|TestID), data = data[data$Test== "CTmin", ], REML = FALSE) 
+model.CTmin.6.b<-lmer(temp_tolerance ~ TimeDay2 + TL_mm + (1|TestID), data = data[data$Test== "CTmin", ], REML = FALSE) 
 
 model.CTmin.7<-lmer(temp_tolerance ~ max.Env.Temp + delta.T + (1|TestID), data = data[data$Test== "CTmin", ], REML = FALSE) 
+model.CTmin.7.c<-lmer(temp_tolerance ~ max.Env.Temp + delta.T + Stat_Var + (1|TestID), data = data[data$Test== "CTmin", ], REML = FALSE) 
+model.CTmin.7.b<-lmer(temp_tolerance ~ max.Env.Temp + delta.T + TL_mm + (1|TestID), data = data[data$Test== "CTmin", ], REML = FALSE) # best 
+model.CTmin.7.d<-lmer(temp_tolerance ~ max.Env.Temp + delta.T + TL_mm + Stat_Var + (1|TestID), data = data[data$Test== "CTmin", ], REML = FALSE) # best 
+
 model.CTmin.8<-lmer(temp_tolerance ~ max.Env.Temp + Temp_test_start + (1|TestID), data = data[data$Test== "CTmin", ], REML = FALSE) 
 model.CTmin.9<-lmer(temp_tolerance ~ delta.T + Temp_test_start + (1|TestID), data = data[data$Test== "CTmin", ], REML = FALSE) 
 model.CTmin.10<-lmer(temp_tolerance ~ max.Env.Temp + delta.T + TimeDay2 + (1|TestID), data = data[data$Test== "CTmin", ], REML = FALSE) 
 model.CTmin.11<-lmer(temp_tolerance ~ max.Env.Temp + Temp_test_start + delta.T + (1|TestID), data = data[data$Test== "CTmin", ], REML = FALSE)
 
+# very convincing that size matters, add as a covariate also below 
 BICdelta(BIC(model.CTmin.0, model.CTmin.1, model.CTmin.2, model.CTmin.3, model.CTmin.4, model.CTmin.5, model.CTmin.6,
-             model.CTmin.7, model.CTmin.8, model.CTmin.9, model.CTmin.10, model.CTmin.11))
+             model.CTmin.1.b, model.CTmin.2.b, model.CTmin.3.b, model.CTmin.4.b, model.CTmin.5.b, model.CTmin.6.b,
+             model.CTmin.7,model.CTmin.7.d, model.CTmin.7.b, model.CTmin.7.c,
+             model.CTmin.8, model.CTmin.9, model.CTmin.10, model.CTmin.11))
 
-model.CTmin.10FL<-lmer(temp_tolerance ~ mean.Env.Temp + (1|TestID), data = data[data$Test== "CTmin", ], REML = FALSE) 
-BICdelta(BIC(model.CTmin.10, model.CTmin.10FL))
+# model.CTmin.7.b  6 856.8219  0.00000 # < best 
+# model.CTmin.7.d  7 860.1296  3.30771
 
 # CT max tests 
-model.CTmax.0<-lmer(temp_tolerance ~ 1 + (1|TestID), data = data[data$Test== "CTmax", ], REML = FALSE)
+model.CTmax.0<-lmer(temp_tolerance ~ 1  + (1|TestID), data = data[data$Test== "CTmax", ], REML = FALSE)
 model.CTmax.1<-lmer(temp_tolerance ~ max.Env.Temp + (1|TestID), data = data[data$Test== "CTmax", ], REML = FALSE) 
+model.CTmax.1.b<-lmer(temp_tolerance ~ max.Env.Temp + TL_mm + (1|TestID), data = data[data$Test== "CTmax", ], REML = FALSE) 
 model.CTmax.2<-lmer(temp_tolerance ~ min.Env.Temp + (1|TestID), data = data[data$Test== "CTmax", ], REML = FALSE) 
+model.CTmax.2.b<-lmer(temp_tolerance ~ min.Env.Temp + TL_mm + (1|TestID), data = data[data$Test== "CTmax", ], REML = FALSE) 
+
 model.CTmax.3<-lmer(temp_tolerance ~ mean.Env.Temp + (1|TestID), data = data[data$Test== "CTmax", ], REML = FALSE) 
+model.CTmax.3.b<-lmer(temp_tolerance ~ mean.Env.Temp + TL_mm + (1|TestID), data = data[data$Test== "CTmax", ], REML = FALSE) # <<< BEST
+model.CTmax.3.c<-lmer(temp_tolerance ~ mean.Env.Temp + TL_mm + delta.T + (1|TestID), data = data[data$Test== "CTmax", ], REML = FALSE) 
+
 model.CTmax.4<-lmer(temp_tolerance ~ Temp_test_start + (1|TestID), data = data[data$Test== "CTmax", ], REML = FALSE) 
+model.CTmax.4.b<-lmer(temp_tolerance ~ Temp_test_start + TL_mm + (1|TestID), data = data[data$Test== "CTmax", ], REML = FALSE) 
 model.CTmax.5<-lmer(temp_tolerance ~ delta.T + (1|TestID), data = data[data$Test== "CTmax", ], REML = FALSE) 
+model.CTmax.5.b<-lmer(temp_tolerance ~ delta.T + TL_mm + (1|TestID), data = data[data$Test== "CTmax", ], REML = FALSE) 
 model.CTmax.6<-lmer(temp_tolerance ~ TimeDay2 + (1|TestID), data = data[data$Test== "CTmax", ], REML = FALSE) 
+model.CTmax.6.b<-lmer(temp_tolerance ~ TimeDay2 + TL_mm + (1|TestID), data = data[data$Test== "CTmax", ], REML = FALSE) 
 
-model.CTmax.7<-lmer(temp_tolerance ~ mean.Env.Temp + delta.T + (1|TestID), data = data[data$Test== "CTmax", ], REML = FALSE) 
-model.CTmax.8<-lmer(temp_tolerance ~ mean.Env.Temp + Temp_test_start + (1|TestID), data = data[data$Test== "CTmax", ], REML = FALSE) 
+model.CTmax.7<-lmer(temp_tolerance ~ max.Env.Temp + delta.T + (1|TestID), data = data[data$Test== "CTmax", ], REML = FALSE) 
+model.CTmax.7.b<-lmer(temp_tolerance ~ max.Env.Temp + delta.T + TL_mm + (1|TestID), data = data[data$Test== "CTmax", ], REML = FALSE) 
+
+model.CTmax.8<-lmer(temp_tolerance ~ max.Env.Temp + Temp_test_start + (1|TestID), data = data[data$Test== "CTmax", ], REML = FALSE) 
 model.CTmax.9<-lmer(temp_tolerance ~ delta.T + Temp_test_start + (1|TestID), data = data[data$Test== "CTmax", ], REML = FALSE) 
-model.CTmax.10<-lmer(temp_tolerance ~ mean.Env.Temp + delta.T + TimeDay2 + (1|TestID), data = data[data$Test== "CTmax", ], REML = FALSE) 
-model.CTmax.11<-lmer(temp_tolerance ~ mean.Env.Temp + Temp_test_start + delta.T + (1|TestID), data = data[data$Test== "CTmax", ], REML = FALSE)
+model.CTmax.10<-lmer(temp_tolerance ~ max.Env.Temp + delta.T + TimeDay2 + (1|TestID), data = data[data$Test== "CTmax", ], REML = FALSE) 
+model.CTmax.11<-lmer(temp_tolerance ~ max.Env.Temp + Temp_test_start + delta.T + (1|TestID), data = data[data$Test== "CTmax", ], REML = FALSE)
 
+# very convincing that size matters, add as a covariate also below 
 BICdelta(BIC(model.CTmax.0, model.CTmax.1, model.CTmax.2, model.CTmax.3, model.CTmax.4, model.CTmax.5, model.CTmax.6,
-             model.CTmax.7, model.CTmax.8, model.CTmax.9, model.CTmax.10, model.CTmax.11))
-
-model.CTmax.3FL<-lmer(temp_tolerance ~ mean.Env.Temp + Field_Lab + (1|TestID), data = data[data$Test== "CTmax", ], REML = FALSE) 
-BICdelta(BIC(model.CTmax.3FL, model.CTmax.3))
-
+             model.CTmax.1.b, model.CTmax.2.b, model.CTmax.3.b,model.CTmax.3.c, model.CTmax.4.b, model.CTmax.5.b, model.CTmax.6.b,
+             model.CTmax.7,model.CTmax.7.d, model.CTmax.7.b, model.CTmax.7.c,
+             model.CTmax.8, model.CTmax.9, model.CTmax.10, model.CTmax.11))
+ 
+# model.CTmax.3.b  5 683.9662  0.00000 << best 
+# model.CTmax.7.b  6 685.0592  1.09298
 
 # model residuals, performance, etc. 
-plot(model.CTmax.3) # good 
-qqmath(model.CTmax.3)
-hist(resid(model.CTmax.3), breaks = 50) # normal, good; few outliers
-
-plot(model.CTmin.7) # good 
-qqmath(model.CTmin.7)
-hist(resid(model.CTmin.7), breaks = 50) # normal, good; few outliers
-
-
-
-### iii) NOT used: all tests (Variables and statics; categorical treatment predictor)----------
-data.max<-data[c(data$Field_Lab == "LAB" & data$Test=="CTmax"),] # all LAB CTmax
-# mod1max.all<-lmer(temp_tolerance ~ treatment + (1|tank), REML = FALSE, data = data.max) # leads to singular fit
-mod1max.all<-lm(temp_tolerance ~ treatment , data = data.max) # leads to singular fit
-plot(mod1max.all)
-# qqmath(mod1max.all)
-# summary(mod1max.all)
-
-data.min<-data[c(data$Field_Lab == "LAB" & data$Test=="CTmin" ),] # all LAB CTmin
-# mod1min.all<-lmer(temp_tolerance ~  treatment  + (1|tank), REML = FALSE, data = data.min) # leads to singular fit
-mod1min.all<-lm(temp_tolerance ~  treatment , data = data.min) # leads to singular fit
-plot(mod1min.all) 
-# qqmath(mod1min.all)
-# summary(mod1min.all)
-
-# Type II anovas 
-car::Anova(mod1max.all)
-car::Anova(mod1min.all)
-# post hocs 
-emmeans(mod1max.all, "treatment")
-emmeans(mod1min.all, "treatment")
-emmeans(mod1max.all, pairwise ~ treatment)
-emmeans(mod1min.all, pairwise ~ treatment)
-
-
-
-
-
-### iv) NOT used: field only CT tests ----------------------
-# are CT results different between times of measurements, days, etc.?
-data.minF<-data[c(data$Field_Lab == "FIELD" & data$Test=="CTmin"),] # all Field CTmax
-data.maxF<-data[c(data$Field_Lab == "FIELD" & data$Test=="CTmax"),] # all Field CTmin
-modF1_min<-lm(temp_tolerance ~  TestID, data = data.minF)
-modF1_max<-lm(temp_tolerance ~  TestID, data = data.maxF)
-# plot(modF1_min)
-# plot(modF1_max)
-
-# >> yes very different 
-car::Anova(modF1_min)
-car::Anova(modF1_max)
-
-
-
-# FIGURES:  ----------
-
-## Supplement: LAB - Growth mg  ----------
-plot_growth <- ggplot()+
-  geom_line(data = pred.datamg, mapping = aes(x = temp, y = pred.GR), color = "grey30", lwd = 0.9)+
-  geom_line(data = pred.datamg, mapping = aes(x = temp, y = pred.GR+pred.GR.se), color = "grey30", lwd = 0.2, lty=2)+
-  geom_line(data = pred.datamg, mapping = aes(x = temp, y = pred.GR-pred.GR.se), color = "grey30", lwd = 0.2, lty=2)+
-  geom_line(data = growth.mod.data, aes(x = temp, GR_mg_d, color = temp_treatment.x), alpha=0.3)+
-  geom_point(data = growth.mod.data, aes(x = temp, GR_mg_d, color = temp_treatment.x, fill = temp_treatment.x),
-             alpha= 0.3, pch = 22, size=2)+
-  geom_point(data = growth.mod.mean, aes(x = temp, mean_GR, color = temp_treatment.x, fill = temp_treatment.x),
-             alpha= 1, pch = 22, size=3)+
-  geom_errorbar(data = growth.mod.mean, mapping = aes(x = temp, ymin = mean_GR-sd_GR, ymax = mean_GR+sd_GR, color = temp_treatment.x),
-                size=0.2, width = 0.1)+
-  # geom_point(data2.sum.w[c(!(is.na(data2.sum.w$GR_mg_d)) & c(data2.sum.w$temp_treatment.x=="V1")),], 
-  #            mapping = aes(x = 20, y = GR_mg_d), color = "#A3ABBD", fill = "#A3ABBD", pch = 22, size=2, alpha = 0.3)+
-  # geom_point(data2.sum.w[c(!(is.na(data2.sum.w$GR_mg_d)) & c(data2.sum.w$temp_treatment.x=="V2")),], 
-  #            mapping = aes(x = 11.8, y = GR_mg_d), color = "#3F4756", fill = "#3F4756",  pch = 22, size=2, alpha = 0.3)+
-  geom_hline(yintercept = 0, linetype="solid", color="red", alpha=0.1)+
-  scale_color_manual(values=c("12" ="#00518C", "17" = "#7FADF1","22" ="#DBA11C", "27" = "#673F00", "V2" = "#3F4756", "V1" = "#A3ABBD") )+
-  scale_fill_manual(values=c("12" ="#00518C",  "17" = "#7FADF1","22" ="#DBA11C","27" ="#673F00", "V2" = "#3F4756", "V1" = "#A3ABBD") )+
-  theme_classic()+
-  # ylim(-15, 40)+
-  xlim(10,30)
-ggformat(plot_growth, x_title = "Temperature treatment", y_title = expression(Growth~rate~(mg~d^-1)), print=FALSE)
-plot_growth <- plot_growth + theme (legend.position = "none")
-# ggsave(plot_growth, filename = "/Users/kristakraskura/Desktop/BOX/UCSB/Research/Carpinteria marsh fish /DataAnalysis/PLOTS/Lab_growth_rate.png", width = 4, height = 4)
-
-# all individuals
-plot_K<- ggplot(data2, aes(temp_treatment, K_cond, colour=timepoint))+
-  geom_point(alpha=1, position=position_dodge(width=0.5))+
-  geom_boxplot(alpha=0.3, position=position_dodge(width=0.5))+
-  scale_color_manual(values=c("grey40", "dodgerblue", "coral"))+
-  theme_classic()+
-  geom_hline(yintercept = 1, linetype = "dashed")+
-  ylim(0, 5)
-ggformat(plot_K, x_title = "Temperature treatment", y_title = expression(Condition~Factor~(K:~100*'%'*mg/TL^3)), print=FALSE)
-
-plot_mg<- ggplot(data2, aes(temp_treatment, mass_mg, color = timepoint))+
-  geom_point(alpha=1, position=position_dodge(width=0.5))+
-  geom_boxplot(alpha=0.3, position=position_dodge(width=0.5))+
-  scale_color_manual(values=c("grey40", "dodgerblue", "coral"))+
-  geom_vline(xintercept = 4.5, linetype="dashed")+
-  theme_classic()
-ggformat(plot_mg, x_title = "Temperature treatment", y_title = "Mass (mg)", print=FALSE)
-plot_mg<-plot_mg+theme(legend.position = "none") 
-
-plot_mm<- ggplot(data2, aes(temp_treatment, TL_mm, colour=timepoint))+
-  geom_point(alpha=1, position=position_dodge(width=0.5))+
-  scale_color_manual(values=c("grey40", "dodgerblue", "coral"))+
-  geom_boxplot(alpha=0.3, position=position_dodge(width=0.5))+
-  geom_vline(xintercept = 4.5, linetype="dashed")+
-  theme_classic()
-ggformat(plot_mm, x_title = "Temperature treatment", y_title = "Total length (mm)", print=FALSE)
-plot_mm<-plot_mm+theme(legend.position = "none") 
-
-
-
-## Manuscript: LAB - Growth, mm  ------
-plot_growth2 <- ggplot()+
-  geom_line(data = pred.datamm, mapping = aes(x = temp, y = pred.GRmm), color = "grey30", lwd = 0.9)+
-  geom_line(data = pred.datamm, mapping = aes(x = temp, y = pred.GRmm+pred.GRmm.se), color = "grey30", lwd = 0.2, lty=2)+
-  geom_line(data = pred.datamm, mapping = aes(x = temp, y = pred.GRmm-pred.GRmm.se), color = "grey30", lwd = 0.2, lty=2)+
-  geom_line(data = growth.mod.data, aes(x = temp, GR_mm_d, color = temp_treatment.x), alpha=0.3)+
-  geom_point(data = growth.mod.data, aes(x = temp, GR_mm_d, color = temp_treatment.x, fill = temp_treatment.x), alpha= 0.3, pch = 22, size=2)+
-  # geom_text(data = growth.mod.data, aes(x = temp, GR_mm_d, label = paste("n=",n.y, sep="")), nudge_x = 0.6, size = 3)+
-  geom_text(data = NULL, aes(x = c(12, 12, 12, 17, 17, 17, 22, 22, 22, 27, 27), y = c(0.02, 0.0125, 0.005, 0.02, 0.0125, 0.005, 0.02, 0.0125, 0.005,0.02, 0.0125)),
-            label = c(14, 23, 21, 22, 24, 18,22, 25, 14, 11, 6), size = 3)+
-  geom_text(data = NULL, aes(x = 12, y = 0.03), label = "n (tank)", size = 3)+
-  geom_point(data = growth.mod.mean, aes(x = temp, mean_GRmm, color = temp_treatment.x, fill = temp_treatment.x), alpha= 1, pch = 22, size=3)+
-  geom_errorbar(data = growth.mod.mean, mapping = aes(x = temp, ymin = mean_GRmm-sd_GRmm, ymax = mean_GRmm+sd_GRmm, color = temp_treatment.x), size=0.2, width = 0.1)+
-  scale_color_manual(values=c("12" ="#00518C", "17" = "#7FADF1","22" ="#DBA11C", "27" = "#673F00", "V2" = "#3F4756", "V1" = "#A3ABBD") )+
-  scale_fill_manual(values=c("12" ="#00518C",  "17" = "#7FADF1","22" ="#DBA11C","27" ="#673F00", "V2" = "#3F4756", "V1" = "#A3ABBD") )+
-  theme_classic()+
-  # ylim(-15, 40)+
-  xlim(10,30)+
-  ylim(0, 0.2)
-ggformat(plot_growth2, x_title = "Temperature treatment", y_title = expression(Growth~rate~(mm~d^-1)), print=F, size_text = 12)
-plot_growth2 <- plot_growth2 + theme (legend.position = "none")
-
-plot_growth2B <- ggplot()+
-  geom_point(data2.sum.w[c(!(is.na(data2.sum.w$GR_mm_d)) & c(data2.sum.w$temp_treatment.x=="V1")),],
-             mapping = aes(x = temp_treatment.x, y = GR_mm_d), color = "#A3ABBD", fill = "#A3ABBD", pch = 22, size=2, alpha = 0.3)+
-  geom_point(data2.sum.w[c(!(is.na(data2.sum.w$GR_mm_d)) & c(data2.sum.w$temp_treatment.x=="V2")),],
-             mapping = aes(x = temp_treatment.x, y = GR_mm_d), color = "#3F4756", fill = "#3F4756",  pch = 22, size=2, alpha = 0.3)+
-  geom_point(data = growth.mod.mean[growth.mod.mean$temp_treatment.x == "V1" | growth.mod.mean$temp_treatment.x == "V2",],
-             aes(x = temp_treatment.x, mean_GRmm, color = temp_treatment.x, fill = temp_treatment.x),
-             alpha= 1, pch = 22, size=3)+
-  geom_errorbar(data = growth.mod.mean[growth.mod.mean$temp_treatment.x == "V1" | growth.mod.mean$temp_treatment.x == "V2",],
-                mapping = aes(x = temp_treatment.x, ymin = mean_GRmm-sd_GRmm, ymax = mean_GRmm+sd_GRmm, color = temp_treatment.x),
-                size=0.2, width = 0.1)+
-  # geom_text(data = data2.sum.w, aes(x = temp_treatment.x, GR_mm_d, label = paste("n=",n.y, sep="")), nudge_x = -0.6, size = 3)+
-  geom_text(data = NULL, aes(x = c(1,1, 2,2,2), y = c(0.02, 0.0125, 0.02, 0.0125, 0.005)),
-            label = c(20, 16, 15, 17, 17), size = 3)+
-  scale_color_manual(values=c("12" ="#00518C", "17" = "#7FADF1","22" ="#DBA11C", "27" = "#673F00", "V2" = "#3F4756", "V1" = "#A3ABBD") )+
-  scale_fill_manual(values=c("12" ="#00518C",  "17" = "#7FADF1","22" ="#DBA11C","27" ="#673F00", "V2" = "#3F4756", "V1" = "#A3ABBD") )+
-  theme_classic()+
-  # ylim(-15, 40)+
-  ylim(0, 0.2)
-ggformat(plot_growth2B, x_title = "Temperature treatment", y_title = expression(Growth~rate~(mm~d^-1)), print=F, size_text = 12)
-plot_growth2B <- plot_growth2B + theme (legend.position = "none", 
-                                        axis.title.y = element_blank(),
-                                        axis.text.y = element_blank(),
-                                        axis.title.x = element_blank())
-
-plot.size1 <- cowplot::plot_grid(plot_growth2, plot_growth2B,
-                                 labels = c("AUTO"),
-                                 rel_widths = c(1, 0.2),
-                                 align = "h")
-ggsave(plot.size1, filename = "./Figures/Figure3_growth.png", width = 6, height = 4.5)
-
-
-
-
-
-
-
-
-
-## 2. LAB: Figures CTmax: --------
-
-plot_CTmax <- ggplot(data.max, aes(temp_treatment, temp_tolerance, fill = temp_treatment, color = temp_treatment, group = temp_treatment ))+
-  geom_boxplot(alpha=0.5, width = 1)+
-  geom_point(alpha=0.8, pch=21,  size=3)+
-  geom_vline(xintercept = 4.5, linetype="dashed")+
-  scale_color_manual(values=c("12" ="#00518C", "17" = "#7FADF1","22" ="#DBA11C", "27" = "#673F00", "V2" = "#3F4756", "V1" = "#A3ABBD") )+
-  scale_fill_manual(values=c("12" ="#00518C",  "17" = "#7FADF1","22" ="#DBA11C","27" ="#673F00", "V2" = "#3F4756", "V1" = "#A3ABBD") )+
-  theme_classic()+
-  ylim(30, 42)
-ggformat(plot_CTmax, x_title = "Temperature treatment", y_title = expression(CT[max]~(degree*C)), print=FALSE)
-plot_CTmax<- plot_CTmax+theme(legend.position = "top")
-
-
-plot_CTmin<- ggplot(data.min, aes(temp_treatment, temp_tolerance, fill = temp_treatment, color = temp_treatment, group = temp_treatment ))+
-  geom_boxplot(alpha=0.5, width = 1)+
-  geom_point(alpha=0.8, pch=21,  size=3)+
-  geom_vline(xintercept = 4.5, linetype="dashed")+
-  scale_color_manual(values=c("12" ="#00518C", "17" = "#7FADF1","22" ="#DBA11C", "27" = "#673F00", "V2" = "#3F4756", "V1" = "#A3ABBD") )+
-  scale_fill_manual(values=c("12" ="#00518C",  "17" = "#7FADF1","22" ="#DBA11C","27" ="#673F00", "V2" = "#3F4756", "V1" = "#A3ABBD") )+
-  theme_classic()+
-  ylim(0, 12)
-ggformat(plot_CTmin, x_title = "Temperature treatment", y_title = expression(CT[min]~(degree*C)), print=FALSE)
-plot_CTmin<- plot_CTmin+theme(legend.position = "top")
-
-
-
-
-
-
-
-
-
-data$TestID2<-factor(data$TestID2, levels = c("LAB-12", "LAB-17", "LAB-22", "LAB-27", "LAB-V1", "LAB-V2", 
-                     "FIELD-44382", "FIELD-44386", "FIELD-44388", "FIELD-44391",
-                     "FIELD-44460", "FIELD-44461"))
-data.sum$TestID2<-factor(data.sum$TestID2, levels = c("LAB-12", "LAB-17", "LAB-22", "LAB-27", "LAB-V1", "LAB-V2", 
-                     "FIELD-44382", "FIELD-44386", "FIELD-44388", "FIELD-44391",
-                     "FIELD-44460", "FIELD-44461"))
-
-
-    
-plot_CTmaxmin <- ggplot(data[!c(data$Field_Lab == "LAB" & !c(data$temp_treatment=="V1" | data$temp_treatment=="V2")),],
-                        aes(x = TestID2, y = temp_tolerance, fill = mean.Env.Temp, color = mean.Env.Temp))+
-  geom_text_repel(data = data.sum[!c(data.sum$TestID2 == "LAB-27" | data.sum$TestID2 == "LAB-22" | data.sum$TestID2 == "LAB-17" | data.sum$TestID2 == "LAB-12") & data.sum$Test == "CTmin",],
-                  aes(x = TestID2, y = mean_CT, label = n, fill = NULL), min.segment.length = 0.1, nudge_x = 0.2, direction = "y", hjust = "left", size = 2, color = "black")+
-  geom_text_repel(data = data.sum[!c(data.sum$TestID2 == "LAB-27" | data.sum$TestID2 == "LAB-22" | data.sum$TestID2 == "LAB-17" | data.sum$TestID2 == "LAB-12") & data.sum$Test == "CTmax",],
-                  aes(x = TestID2, y = mean_CT, label = n, fill = NULL), min.segment.length =  0.1, nudge_x = 0.2, direction = "y", hjust = "left", size = 2, color = "black")+
-  geom_point(alpha=0.7, size=1.5, pch=21)+
-  geom_point(data.sum[!c(data.sum$TestID2 == "LAB-27" | data.sum$TestID2 == "LAB-22" | data.sum$TestID2 == "LAB-17" | data.sum$TestID2 == "LAB-12"),],
-             mapping = aes(y = mean_CT, x = TestID2, fill = NULL), alpha=1, size=3, color = "black", pch=21)+
-  geom_vline(xintercept = c(2.5), linetype="dashed")+
-  scale_fill_viridis_c(option = "D", name = "Mean T (ºC)")+
-  scale_color_viridis_c(option = "D", guide = NULL)+
-  scale_x_discrete(labels = c("LAB-V1" = "V1", "LAB-V2" = "V2", "FIELD-44382" = "Jul-5", "FIELD-44386" = "Jul-9", "FIELD-44388" = "Jul-11", "FIELD-44391" = "Jul-14",
-                     "FIELD-44460" = "Sep-21", "FIELD-44461" = "Sep-22"))+
-  theme_classic()+
-  ylim(0, 42)
-ggformat(plot_CTmaxmin, x_title = "Temperature treatment", y_title = expression(Temperature~tolerance~(degree*C)), size_text = 12,  print=FALSE)
-plot_CTmaxmin <- plot_CTmaxmin+theme(legend.position = c(0.9, 0.5),
-                                     axis.title.y = element_blank())
-
-
-
-plot_CTmaxminLAB <- ggplot(data[c(data$Field_Lab == "LAB" & !c(data$temp_treatment=="V1" | data$temp_treatment=="V2")),],
-                        aes(x = temp, y = temp_tolerance, fill = TestID2, color = TestID2))+
-  geom_line(data = predCTmaxStatic, aes(x = temp, y = upr, fill = NULL, color = NULL), color = "grey30", lwd = 0.2, lty=2 )+
-  geom_line(data = predCTmaxStatic, aes(x = temp, y = fit, fill = NULL, color = NULL), color = "grey30", lwd = 0.2, lty=1 )+
-  geom_line(data = predCTmaxStatic, aes(x = temp, y = lwr, fill = NULL, color = NULL), color = "grey30", lwd = 0.2, lty=2)+
-  geom_line(data = predCTminStatic, aes(x = temp, y = upr, fill = NULL, color = NULL), color = "grey30", lwd = 0.2, lty=2 )+
-  geom_line(data = predCTminStatic, aes(x = temp, y = fit, fill = NULL, color = NULL), color = "grey30", lwd = 0.2, lty=1 )+
-  geom_line(data = predCTminStatic, aes(x = temp, y = lwr, fill = NULL, color = NULL), color = "grey30", lwd = 0.2, lty=2)+# intercept = fixef(mod1)[1], slope = fixef(mod1)[2])+
-  geom_text_repel(data = data.sum[c(data.sum$TestID2 == "LAB-27" | data.sum$TestID2 == "LAB-22" | data.sum$TestID2 == "LAB-17" | data.sum$TestID2 == "LAB-12") & data.sum$Test == "CTmin",],
-                  aes(x = temp, y = mean_CT, label = n, fill = NULL), min.segment.length = 0.1, nudge_x = 1, direction = "y", hjust = "left", size = 2, color = "black")+
-  geom_text_repel(data = data.sum[c(data.sum$TestID2 == "LAB-27" | data.sum$TestID2 == "LAB-22" | data.sum$TestID2 == "LAB-17" | data.sum$TestID2 == "LAB-12") & data.sum$Test == "CTmax",],
-                  aes(x = temp, y = mean_CT, label = n, fill = NULL), min.segment.length =  0.1, nudge_x = 1, direction = "y", hjust = "left", size = 2, color = "black")+
-  geom_point(alpha=0.7, size=1.5, pch=21)+
-  geom_point(data.sum[c(data.sum$TestID2 == "LAB-27" | data.sum$TestID2 == "LAB-22" | data.sum$TestID2 == "LAB-17" | data.sum$TestID2 == "LAB-12"),],
-             mapping = aes(y = mean_CT, x = temp, fill = NULL), alpha=1, size=3, color = "black", pch=21)+
-  scale_color_manual(values=c("LAB-12" ="#00518C", "LAB-17" = "#7FADF1","LAB-22" ="#DBA11C", "LAB-27" = "#673F00") )+
-  scale_fill_manual(values=c("LAB-12" ="#00518C",  "LAB-17" = "#7FADF1","LAB-22" ="#DBA11C","LAB-27" ="#673F00") )+
-  theme_classic()+
-  ylim(0, 42)+
-  xlim(11, 28)
-ggformat(plot_CTmaxminLAB, x_title = "Temperature treatment", y_title = expression(Temperature~tolerance~(degree*C)), size_text = 12,  print=FALSE)
-plot_CTmaxminLAB <- plot_CTmaxminLAB + theme(legend.position = "none")
-
-cowplot::plot_grid(plot_CTmaxminLAB, plot_CTmaxmin,
-                   labels = c('A', 'B'),
-                   rel_widths = c(0.5, 1),
-                   align = "hv") %>% 
-ggsave( filename = "./Figures/Figure3_CTresults.png", width = 8, height = 4)
-
-
-
-
-plot_CTsize<-ggplot(data=data, aes(y=temp_tolerance , x=mass_mg,
-                                   group = interaction(Test, temp),
-                                   fill = Field_Lab, color = Field_Lab)) +
-  geom_point( colour="black", pch=21, size=2)+
-  facet_wrap(.~Test, scale="free")+
-  theme_classic()+
-  scale_fill_locuszoom()
-ggformat(plot_CTsize, x_title = "Body mass (mg)", y_title = expression(Temperature~tolerance~(degree*C)), print = TRUE)
-
-plot_CTsize<-ggplot(data=data, aes(y=temp_tolerance , x=TL_mm,
-                                   group = interaction(Test, temp),
-                                   fill = Field_Lab, color = Field_Lab)) +
-  geom_point( colour="black", pch=21, size=2)+
-  facet_wrap(.~Test, scale="free")+
-  theme_classic()+
-  scale_fill_locuszoom()
-ggformat(plot_CTsize, x_title = "Body Lentgth (mm)", y_title = expression(Temperature~tolerance~(degree*C)), print = TRUE, size_text = 12)
-ggsave( filename = "./Figures/Figure3_scaling_TLmm.png", width = 8, height = 4)
-
-
-
-plot_KCTtests<- ggplot(data, aes(TestID, K_cond, color = Date.1))+
-  geom_hline(yintercept = c(0.5, 1), linetype = "dashed")+
-  geom_point(alpha=1, position=position_dodge(width=0.5))+
-  geom_boxplot(alpha=0.3, position=position_dodge(width=0.5))+
-  geom_vline(xintercept = 4.5, linetype="dashed")+
-  theme_classic()
-ggformat(plot_KCTtests, x_title = "Temperature treatment", y_title = expression(Condition~Factor~(K:~100*'%'*mg/TL^3)), print=TRUE)
-plot_KCTtests <- plot_KCTtests +theme(axis.text.x = element_text(angle = 45, size=6))
-
-# plot000<-ggplot(data, aes(x=reorder(factor(Date),temp_tolerance, na.rm = TRUE), y=temp_tolerance,
-#                           group = interaction( TestID),
-#                           color = Field_Lab,
-#                           fill = treatment))+
-#   # geom_point(alpha=1)+
-#   geom_boxplot()+
-#   theme_classic()
-#   # facet_wrap(Field_Lab~Test, scales = "free", nrow = 2)
-# plot000
-
-
-
-
-# correlations with start temp and delta. Field and Lab 
-# #  *************************************
-CTplotFIELD<-ggplot(data=data, aes(y=temp_tolerance, x=Temp_test_start, shape = Field_Lab, color = temp_treatment, fill = temp_treatment))+
-  geom_point(size=2)+
-  scale_shape_manual(values = c(1, 21), name = "Location")+
-  # geom_errorbar( data=dat.ctF.l[dat.ctF.l$test == "CTmin",], mapping = aes(ymin = mean_CT - sd_CT, ymax = mean_CT + sd_CT),  width=0.2, size=0.5, alpha=0.8)+
-  theme_classic()+
-  scale_color_manual(values=c("12" ="#00518C", "17" = "#7FADF1","22" ="#DBA11C", "27" = "#673F00", "V2" = "#3F4756", "V1" = "#A3ABBD", "NA" = "darkgreen"), name = "Treatment ºC" )+
-  scale_fill_manual(values=c("12" ="#00518C",  "17" = "#7FADF1","22" ="#DBA11C","27" ="#673F00", "V2" = "#3F4756", "V1" = "#A3ABBD", "NA" = "darkgreen"), name = "Treatment ºC" )
-ggformat(CTplotFIELD, x_title = expression(Test~start~temperature~(degree*C)), y_title = expression(Temperature~tolerance~(degree*C)), print = TRUE, size_text = 12)
-CTplotFIELD<-CTplotFIELD+theme(legend.position = "nonet", 
-                                             legend.title = element_text())
-                               # , 
-                                             # legend.background = element_rect(fill = "white", color = "black"))
-
-CTplotFIELD.delta<-ggplot(data=data, aes(y=temp_tolerance, x=delta.T, shape = Field_Lab, color = temp_treatment, fill = temp_treatment, label = TestID))+
-  geom_point(size=2)+
-  scale_shape_manual(values = c(1, 21))+
-  # geom_errorbar( data=dat.ctF.l[dat.ctF.l$test == "CTmin",], mapping = aes(ymin = mean_CT - sd_CT, ymax = mean_CT + sd_CT),  width=0.2, size=0.5, alpha=0.8)+
-  theme_classic()+
-  geom_text(check_overlap = T)+
-  scale_color_manual(values=c("12" ="#00518C", "17" = "#7FADF1","22" ="#DBA11C", "27" = "#673F00", "V2" = "#3F4756", "V1" = "#A3ABBD", "NA" = "darkgreen") )+
-  scale_fill_manual(values=c("12" ="#00518C",  "17" = "#7FADF1","22" ="#DBA11C","27" ="#673F00", "V2" = "#3F4756", "V1" = "#A3ABBD", "NA" = "darkgreen") )
-ggformat(CTplotFIELD.delta, x_title = expression(Delta~Daily~Temperature~(degree*C)), y_title = expression(Temperature~tolerance~(degree*C)), print = TRUE)
-# CTplotFIELD.delta<-CTplotFIELD.delta+theme(legend.position = c(0.2, 0.5), 
-#                                              legend.title = element_text(), 
-#                                              legend.background = element_rect(fill = "white", color = "black"))+
-#   guides(fill=guide_legend(title=expression(Delta~daily~degree*C)))
-#  *************************************
-
-
-
-
-
-# correlations with means, min, max 
-# #  *************************************
-
-CTplotFIELD1<-ggplot(data=data, aes(y=temp_tolerance, x=max.Env.Temp, shape = Field_Lab, color = temp_treatment, fill = temp_treatment))+
-  geom_point(size=2)+
-  scale_shape_manual(values = c(1, 21))+
-  theme_classic()+
-  scale_color_manual(values=c("12" ="#00518C", "17" = "#7FADF1","22" ="#DBA11C", "27" = "#673F00", "V2" = "#3F4756", "V1" = "#A3ABBD", "NA" = "darkgreen") )+
-  scale_fill_manual(values=c("12" ="#00518C",  "17" = "#7FADF1","22" ="#DBA11C","27" ="#673F00", "V2" = "#3F4756", "V1" = "#A3ABBD", "NA" = "darkgreen") )
-ggformat(CTplotFIELD1, x_title = expression(Max~daily~T~(degree*C)), y_title = expression(Temperature~tolerance~(degree*C)), print = TRUE, size_text = 12)
-CTplotFIELD1 <- CTplotFIELD1 + theme(legend.position = "none", 
-                                     legend.title = element_text(), 
-                                     axis.title.y = element_blank())
-
-CTplotFIELD2<-ggplot(data=data, aes(y=temp_tolerance, x=mean.Env.Temp, shape = Field_Lab, color = temp_treatment, fill = temp_treatment))+
-  geom_point(size=2)+
-  scale_shape_manual(values = c(1, 21))+
-  theme_classic()+
-  scale_color_manual(values=c("12" ="#00518C", "17" = "#7FADF1","22" ="#DBA11C", "27" = "#673F00", "V2" = "#3F4756", "V1" = "#A3ABBD", "NA" = "darkgreen") )+
-  scale_fill_manual(values=c("12" ="#00518C",  "17" = "#7FADF1","22" ="#DBA11C","27" ="#673F00", "V2" = "#3F4756", "V1" = "#A3ABBD", "NA" = "darkgreen") )
-ggformat(CTplotFIELD2, x_title = expression(Mean~daily~T~(degree*C)), y_title = expression(Temperature~tolerance~(degree*C)), print = F, size_text = 12)
-CTplotFIELD2 <- CTplotFIELD2 + theme(legend.position = "none", 
-                                     legend.title = element_text(), 
-                                     axis.title.y = element_blank())
-
-
-CTplotFIELD3<-ggplot(data=data, aes(y=temp_tolerance, x=min.Env.Temp, shape = Field_Lab,color = temp_treatment, fill = temp_treatment))+
-  geom_point(size=2)+
-  scale_shape_manual(values = c(1, 21))+
-  theme_classic()+
-  scale_color_manual(values=c("12" ="#00518C", "17" = "#7FADF1","22" ="#DBA11C", "27" = "#673F00", "V2" = "#3F4756", "V1" = "#A3ABBD", "NA" = "darkgreen") )+
-  scale_fill_manual(values=c("12" ="#00518C",  "17" = "#7FADF1","22" ="#DBA11C","27" ="#673F00", "V2" = "#3F4756", "V1" = "#A3ABBD", "NA" = "darkgreen") )
-ggformat(CTplotFIELD3, x_title = expression(Min~Daily~Temperature~(degree*C)), y_title = expression(Temperature~tolerance~(degree*C)), print = FALSE)
-
-# "max.Env.Temp"    "min.Env.Temp"    "mean.Env.Temp"
-#  *************************************
-
-
-
-
-cowplot:::plot_grid(CTplotFIELD, CTplotFIELD2, CTplotFIELD1,
-                    labels = "AUTO", 
-                    nrow =1,
-                    ncol=3,
-                    align = "hv", 
-                    rel_widths = c(0.9, 0.9, 1)) %>% 
-ggsave(filename = "Figures/Figure3_EnvCorrelations.png", width = 9, height = 3)
-# ggsave(plot_CTsizeF, filename = "/Users/kristakraskura/Desktop/BOX/UCSB/Research/Carpinteria marsh fish /DataAnalysis/PLOTS/Field_CTmaxCT_size.png", width = 7, height = 3.5)
- 
-# ******************************************
-
-
-
-
-
-
-
-# DATA SUMMARIES: --------
+plot(model.CTmax.3.b) # good 
+qqmath(model.CTmax.3.b)
+hist(resid(model.CTmax.3.b), breaks = 50) # normal, good; few outliers
+
+plot(model.CTmin.7.b) # good 
+qqmath(model.CTmin.7.b)
+hist(resid(model.CTmin.7.b), breaks = 50) # normal, good; few outliers
+
+### variables for plotting -----
+# mean env temp
+CTmax.int<-round(fixef(model.CTmax.3.b)[1], 2) 
+CTmax.slopeMean<-round(fixef(model.CTmax.3.b)[2], 2)
+CTmax.slopeTL<-round(fixef(model.CTmax.3.b)[3], 2)
+CTmax.n<-unlist(summary(model.CTmax.3.b)[[3]][2])[1]
+
+# max env temp & delta 
+CTmin.int<-round(fixef(model.CTmin.7.b)[1], 2)
+CTmin.slopeMax<-round(fixef(model.CTmin.7.b)[2], 2)
+CTmin.slopeDelta<-round(fixef(model.CTmin.7.b)[3], 2)
+CTmin.slopeTL<-round(fixef(model.CTmin.7.b)[4], 2)
+CTmin.n<-unlist(summary(model.CTmin.7.b)[[3]][2])[1]
+
+data.ctmin.predict<-as.data.frame(expand.grid(max.Env.Temp = c(12, 34), delta.T = c(7.844), TL_mm = 30.82))
+data.ctmin.predict$pred.ctmin<- predict(model.CTmin.7.b, newdata =data.ctmin.predict, re.form = NA)
+
+data.ctmax.predict<-as.data.frame(expand.grid(mean.Env.Temp = c(12, 34), delta.T = c(7.844), TL_mm = 30.82))
+data.ctmax.predict$pred.ctmax<- predict(model.CTmax.3.b, newdata =data.ctmax.predict, re.form = NA)
+
+# Data Summaries, summayr stats: --------
 ###  get one representative value for a treatment 
 # a dataframe with one mean per temp treatment 
 dat<-data2  %>% 
@@ -747,191 +344,244 @@ dat.CTmax<-data %>%
   
 dat.ct<-rbind(dat.CTmin, dat.CTmax)
 
-# where on the regresion line is ct min?
-# y = int+x(m)
-# -xm = int - y
-# xm = y - int
-# x = (y - int) /m 
+data.ctmax<-data[data$Test == "CTmax", ]
+data.ctmin<-data[data$Test == "CTmin", ]
 
-# inters.V1CT.x<-(dat.CTmin$mean_CT[5] - fixef(mod1min)[1])/ fixef(mod1min)[2]
-# inters.V1CT.y<-(dat.CTmin$mean_CT[5])
-# inters.V1ctmax.x<-(dat.CTmax$mean_CTmax[5] - fixef(mod1)[1])/ fixef(mod1)[2]
-# inters.V1ctmax.y<-(dat.CTmax$mean_CTmax[5])
-# 
-# inters.V2CT.x<-(dat.CTmin$mean_CT[6] - fixef(mod1min)[1])/ fixef(mod1min)[2]
-# inters.V2CT.y<-(dat.CTmin$mean_CT[6])
-# inters.V2ctmax.x<-(dat.CTmax$mean_CTmax[6] - fixef(mod1)[1])/ fixef(mod1)[2]
-# inters.V2ctmax.y<-(dat.CTmax$mean_CTmax[6])
+summary(data.ctmax)
+summary(data.ctmin)
 
+length(levels(factor(data.ctmax$TestID)))
+length(levels(factor(data.ctmin$TestID)))
 
+n.tests.max.F<-length(levels(factor(data.maxF$TestID))) # field only 
+n.tests.min.F<-length(levels(factor(data.minF$TestID))) # field only 
+n.tests.max.L<-length(levels(factor(data.max$TestID))) # lab only 
+n.tests.min.L<-length(levels(factor(data.min$TestID))) # lab only 
 
-dat.sum<-dat %>% 
-  dplyr:::group_by(Start.T, treatm, Test, Date, TimeDay, Locat, delta.T, Regime, mean.T) %>%
-  summarise(mean_CT=mean(CT_degC),
-            sd_CT=sd(CT_degC),
-            min_CT=min(CT_degC),
-            max_CT=max(CT_degC), n=length(CT_degC), se_CT = sd_CT/sqrt(n))
+n.indiv.max.F<-nrow(data.maxF) # field only 
+n.indiv.min.F<-nrow(data.minF) # field only 
+n.indiv.max.L<-nrow(data.max) # lab only 
+n.indiv.min.L<-nrow(data.min) # lab only 
 
 
+# FIGURES:  ----------
+## 3. [main 1] Figures main, all CTs with correlations of env. temp-----
+## [main 1a] start temp *************************************
+CTplotFIELD<-ggplot(data=data, aes(y=temp_tolerance, x=Temp_test_start, shape = Stat_Var, alpha = Stat_Var, size = Stat_Var, fill = temp_treatment, color = temp_treatment))+
+  geom_point()+
+  scale_shape_manual(values = c(5, 21), name = "")+
+  scale_size_manual(values = c(2, 3))+
+  scale_alpha_manual(values = c(1, 0.5))+
+  theme_classic()+
+  guides(size = "none", alpha = "none")+
+  annotate(geom = "text", y = 46.5, x = 17, hjust = 0, color = "black", size = 3.5,
+         label = bquote(Field ~ n[tests] == ~ .(n.tests.max.F) ~ "(" * n[Indiv] == ~ .(n.indiv.max.F) * ")"))+
+  annotate(geom = "text", y = 43.5, x = 17, hjust = 0, color = "black", size = 3.5,
+         label = bquote(Lab ~ n[tests] == ~ .(n.tests.max.L) ~ "(" * n[Indiv] == ~ .(n.indiv.max.L) * ")"))+
+  annotate(geom = "text", y = -4, x = 17, hjust = 0, color = "black", size = 3.5,
+         label = bquote(Field ~ n[tests] == ~ .(n.tests.min.F) ~ "(" * n[Indiv] == ~ .(n.indiv.min.F) * ")"))+
+  annotate(geom = "text", y = -7, x = 17, hjust = 0, color = "black", size = 3.5,
+         label = bquote(Lab ~ n[tests] == ~ .(n.tests.min.L) ~ "(" * n[Indiv] == ~ .(n.indiv.min.L) * ")"))+
+  scale_fill_manual(values=c("12" ="#00518C", "17" = "#008A60","22" ="#DBA11C", "27" = "#BE647D", "V2" = "black", "V1" = "#A3ABBD", "FIELD" = "#00CAFF"),
+                    name = "", labels = c("12ºC", "17ºC", "22ºC", "27ºC", "V2", "V1", "Field"))+
+  scale_color_manual(values=c("12" ="#00518C", "17" = "#008A60","22" ="#DBA11C", "27" = "#BE647D", "V2" = "black", "V1" = "#A3ABBD", "FIELD" = "#00CAFF"),
+                     name = "", labels = c("12ºC", "17ºC", "22ºC", "27ºC", "V2", "V1", "Field"))+
+  scale_y_continuous(limits = c(-8, 47), breaks = c(seq(0, 45, 5)))
+ggformat(CTplotFIELD, x_title = expression(Test~start~temperature~(degree*C)), y_title = expression(Temperature~tolerance~(degree*C)), print = F, size_text = 12)
+CTplotFIELD <- CTplotFIELD + theme(legend.position = "none", 
+                                     legend.title = element_text(), 
+                                     axis.title.y = element_blank())
+CTplotFIELD
 
+## [main 1b] mean temp *************************************
+CTplotFIELD2<-ggplot(data=data, aes(y=temp_tolerance, x=mean.Env.Temp, shape = Stat_Var, alpha = Stat_Var, size = Stat_Var, fill = temp_treatment, color = temp_treatment))+
+  geom_line(data = data.ctmax.predict, mapping = aes(y = pred.ctmax, x = mean.Env.Temp, alpha = NULL, size = NULL, shape = NULL, fill = NULL, color =NULL), lty = "dashed", color = "black", size=0.5)+
+  geom_point()+
+  scale_shape_manual(values = c(5, 21), name = "")+
+  scale_size_manual(values = c(2, 3))+
+  scale_alpha_manual(values = c(1, 0.5))+
+  theme_classic()+
+  guides(size = "none", alpha = "none")+
+  theme_classic()+
+  scale_fill_manual(values=c("12" ="#00518C", "17" = "#008A60","22" ="#DBA11C", "27" = "#BE647D", "V2" = "black", "V1" = "#A3ABBD", "FIELD" = "#00CAFF"),
+                     name = "", labels = c("12ºC", "17ºC", "22ºC", "27ºC", "V2", "V1", "Field"))+
+  scale_color_manual(values=c("12" ="#00518C", "17" = "#008A60","22" ="#DBA11C", "27" = "#BE647D", "V2" = "black", "V1" = "#A3ABBD", "FIELD" = "#00CAFF"),
+                     name = "", labels = c("12ºC", "17ºC", "22ºC", "27ºC", "V2", "V1", "Field"))+
+  scale_y_continuous(limits = c(-8, 47), breaks = c(seq(0, 45, 5)))+
+  annotate(geom = "text", y = 44, x = 15, hjust = 0, color = "black", size = 3.5,
+         label = bquote( CT[max] == ~ .(CTmax.int) ~ "+" ~ .(CTmax.slopeMean) * T[mean] ~ + .(CTmax.slopeTL) * "TL"))
+ggformat(CTplotFIELD2, x_title = expression(Mean~daily~T~(degree*C)), y_title = expression(Temperature~tolerance~(degree*C)), print = F, size_text = 12)
+CTplotFIELD2<-CTplotFIELD2+theme(legend.position = c(0.88, 0.5),
+                               legend.key.size = unit(0.2, "cm"),
+                               legend.margin = margin(-0.8,0,0,0, unit="cm"))
+CTplotFIELD2
 
+# correlations with means, min, max 
+## [main 1c] max temp *************************************
+CTplotFIELD1<-ggplot(data=data, aes(y=temp_tolerance, x=max.Env.Temp,  shape = Stat_Var, alpha = Stat_Var, size = Stat_Var, fill = temp_treatment, color = temp_treatment))+
+  geom_line(data = data.ctmin.predict, mapping = aes(y = pred.ctmin, x = max.Env.Temp, size = NULL, alpha = NULL, shape = NULL, fill = NULL, color =NULL), lty = "dashed", color = "black", size=0.5)+
+  geom_point()+
+  scale_shape_manual(values = c(5, 21), name = "Location")+
+  scale_size_manual(values = c(2, 3))+
+  scale_alpha_manual(values = c(1, 0.5))+
+  guides(size = "none", alpha = "none")+
+  # geom_errorbar( data=dat.ctF.l[dat.ctF.l$test == "CTmin",], mapping = aes(ymin = mean_CT - sd_CT, ymax = mean_CT + sd_CT),  width=0.2, size=0.5, alpha=0.8)+
+  theme_classic()+
+  scale_fill_manual(values=c("12" ="#00518C", "17" = "#008A60","22" ="#DBA11C", "27" = "#BE647D", "V2" = "black", "V1" = "#A3ABBD", "FIELD" = "#00CAFF"), name = "Treatment ºC" )+
+  scale_color_manual(values=c("12" ="#00518C", "17" = "#008A60","22" ="#DBA11C", "27" = "#BE647D", "V2" = "black", "V1" = "#A3ABBD", "FIELD" = "#00CAFF"), name = "Treatment ºC" )+
+  scale_y_continuous(limits = c(-8, 47), breaks = c(seq(0, 45, 5)))+
+  annotate(geom = "text", y = -5, x = 11.5, hjust = 0, color = "black", size = 3.5,
+         label = bquote( CT[min] == ~ .(CTmin.int) ~ "+" ~ .(CTmin.slopeMax) * T[max] ~ .(CTmin.slopeDelta) * T[range] ~ .(CTmin.slopeTL) * "TL"))
+ ggformat(CTplotFIELD1, x_title = expression(Max~daily~T~(degree*C)), y_title = expression(Temperature~tolerance~(degree*C)), print = TRUE, size_text = 12)
+CTplotFIELD1 <- CTplotFIELD1 + theme(legend.position = "none", 
+                                     legend.title = element_text(), 
+                                     axis.title.y = element_blank())
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# delta and variabitliy field 
-PLOT1<-ggplot()+
-  # geom_line(data=pred.data, mapping = aes(y=predCTmax, x=delta.T), lty=2, color = "grey", lwd = 0.5)+
-  geom_abline(slope = fixef(mod.envT.CTmin.D1)[2], intercept = fixef(mod.envT.CTmin.D1)[1], lty=1, color = "grey30", lwd = 0.7)+
-  geom_point(data=dat.V[dat.V$Test == "CTmax",], mapping = aes(x=delta.T, y=CT_degC, fill =mean.T, color = mean.T), size=2, pch=21, alpha = 0.8, show.legend = FALSE)+
-  geom_errorbar( data=dat.sum.V[dat.sum.V$Test == "CTmax",], mapping = aes(x=delta.T, ymin = mean_CT - se_CT, ymax = mean_CT + se_CT), color = "grey30", width=0.1, size=0.4, alpha=0.8, show.legend = FALSE)+
-  geom_point(data=dat.sum.V[dat.sum.V$Test == "CTmax",], mapping = aes(x=delta.T, y=mean_CT, fill =mean.T, label = n), color = "black", size=3, pch=21, show.legend = FALSE)+
-  geom_point(data=dat.V[dat.V$Test == "CTmin",], mapping = aes(x=delta.T, y=CT_degC, fill =mean.T, color = mean.T), size=2, pch=23, alpha = 0.8, show.legend = F)+
-  geom_errorbar( data=dat.sum.V[dat.sum.V$Test == "CTmin",], mapping = aes(x=delta.T, ymin = mean_CT - se_CT, ymax = mean_CT + se_CT), color = "grey30", width=0.1, size=0.4, alpha=0.8, show.legend = FALSE)+
-  geom_point(data=dat.sum.V[dat.sum.V$Test == "CTmin",], mapping = aes(x=delta.T, y=mean_CT, fill =mean.T, label = n), color = "black", size=3, pch=23, show.legend = FALSE)+
-  scale_color_gradient2(low = "#5302a3", high = "#f0f921", mid = "#f48849", midpoint = 22 , guide = "none")+
-  scale_fill_gradient2(low = "#5302a3", high = "#f0f921", mid = "#f48849", midpoint = 22 , guide = "none")+
- 
-  geom_point(dat.V[ c(dat.V$treatm=="V1") & c(dat.V$Test=="CTmax"),], mapping = aes(x=delta.T, y=CT_degC,), color = "#3F4756", fill = "#3F4756", alpha=1, pch = 21, size=2, show.legend = FALSE)+
-  geom_point(dat.V[ c(dat.V$treatm=="V2") & c(dat.V$Test=="CTmax"),], mapping = aes(x=delta.T, y=CT_degC,), color = "#A3ABBD", fill = "#A3ABBD", alpha=1, pch = 21, size=2, show.legend = FALSE)+
-  geom_point(dat.V[ c(dat.V$treatm=="V1") & c(dat.V$Test=="CTmin"),], mapping = aes(x=delta.T, y=CT_degC,), color = "#3F4756", fill = "#3F4756", alpha=1, pch = 23, size=2, show.legend = FALSE)+
-  geom_point(dat.V[ c(dat.V$treatm=="V2") & c(dat.V$Test=="CTmin"),], mapping = aes(x=delta.T, y=CT_degC,), color = "#A3ABBD", fill = "#A3ABBD", alpha=1, pch = 23, size=2, show.legend = FALSE)+
-  geom_point(data=dat.sum.V[c(dat.sum.V$treatm=="V1" & dat.sum.V$Test == "CTmax"),], mapping = aes(x=delta.T, y=mean_CT), color = "black", fill = "#3F4756", size=3, pch=21, show.legend = FALSE)+
-  geom_point(data=dat.sum.V[c(dat.sum.V$treatm=="V2" & dat.sum.V$Test == "CTmax"),], mapping = aes(x=delta.T, y=mean_CT), color = "black", fill = "#A3ABBD", size=3, pch=21, show.legend = FALSE)+
-  geom_point(data=dat.sum.V[c(dat.sum.V$treatm=="V1" & dat.sum.V$Test == "CTmin"),], mapping = aes(x=delta.T, y=mean_CT), color = "black", fill = "#3F4756", size=3, pch=23, show.legend = FALSE)+
-  geom_point(data=dat.sum.V[c(dat.sum.V$treatm=="V2" & dat.sum.V$Test == "CTmin"),], mapping = aes(x=delta.T, y=mean_CT), color = "black", fill = "#A3ABBD", size=3, pch=23, show.legend = FALSE)+
-  theme_classic()
-ggformat(PLOT1, x_title = expression(Delta~Daily~Temperature~(degree*C)), y_title = expression(Temperature~tolerance~(degree*C)), print = FALSE)
-PLOT1<-PLOT1 +theme(legend.position = c(0.2, 0.5), 
-                legend.title = element_text(), 
-                legend.background = element_rect(fill = "white", size = 0.1, color = "black"))+
-  guides(fill=guide_legend(title=expression(Mean~daily~degree*C)))
-PLOT1
-
-
-PLOT2<-ggplot()+
-  # geom_line(data=pred.data, mapping = aes(y=predCTmax, x=Start.T), lty=2, color = "grey", lwd = 0.5)+
-  # geom_point(data=dat[dat$Test == "CTmax",], mapping = aes(x=Start.T, y=CT_degC, fill =delta.T, color = delta.T), size=2, pch=21, alpha = 0.8, show.legend = FALSE)+
-  geom_errorbar( data=data.sum[dat.sum$Test == "CTmax",], mapping = aes(x=Start.T, ymin = mean_CT - se_CT, ymax = mean_CT + se_CT), color = "grey30", width=0.1, size=0.4, alpha=0.8, show.legend = FALSE)+
-  geom_point(data=dat.sum[dat.sum$Test == "CTmax",], mapping = aes(x=Start.T, y=mean_CT, fill =Locat, label = n), color = "black", size=3, pch=21, show.legend = FALSE)+
-  # geom_point(data=dat[dat$Test == "CTmin",], mapping = aes(x=Start.T, y=CT_degC, fill =delta.T, color = delta.T), size=2, pch=23, alpha = 0.8, show.legend = FALSE)+
-  geom_errorbar( data=dat.sum[dat.sum$Test == "CTmin",], mapping = aes(x=Start.T, ymin = mean_CT - se_CT, ymax = mean_CT + se_CT), color = "grey30", width=0.1, size=0.4, alpha=0.8, show.legend = FALSE)+
-  geom_point(data=dat.sum[dat.sum$Test == "CTmin",], mapping = aes(x=Start.T, y=mean_CT, fill =Locat, label = n), color = "black", size=3, pch=23, show.legend = FALSE)+
-  scale_fill_manual(values = c("#EA573D", "white"))+
-  
-  # geom_point(dat[ c(dat$treatm=="V1") & c(dat$Test=="CTmax"),], mapping = aes(x=Start.T, y=CT_degC,), color = "#3F4756", fill = "#3F4756", alpha=1, pch = 21, size=2, show.legend = FALSE)+
-  # geom_point(dat[ c(dat$treatm=="V2") & c(dat$Test=="CTmax"),], mapping = aes(x=Start.T, y=CT_degC,), color = "#A3ABBD", fill = "#A3ABBD", alpha=1, pch = 21, size=2, show.legend = FALSE)+
-  # geom_point(dat[ c(dat$treatm=="V1") & c(dat$Test=="CTmin"),], mapping = aes(x=Start.T, y=CT_degC,), color = "#3F4756", fill = "#3F4756", alpha=1, pch = 23, size=2, show.legend = FALSE)+
-  # geom_point(dat[ c(dat$treatm=="V2") & c(dat$Test=="CTmin"),], mapping = aes(x=Start.T, y=CT_degC,), color = "#A3ABBD", fill = "#A3ABBD", alpha=1, pch = 23, size=2, show.legend = FALSE)+
-  geom_point(data=dat.sum[c(dat.sum$treatm=="V1" & dat.sum$Test == "CTmax"),], mapping = aes(x=Start.T, y=mean_CT), color = "black", fill = "#3F4756", size=3, pch=21, show.legend = FALSE, stroke=1)+
-  geom_point(data=dat.sum[c(dat.sum$treatm=="V2" & dat.sum$Test == "CTmax"),], mapping = aes(x=Start.T, y=mean_CT), color = "black", fill = "#A3ABBD", size=3, pch=21, show.legend = FALSE, stroke=1)+
-  geom_point(data=dat.sum[c(dat.sum$treatm=="V1" & dat.sum$Test == "CTmin"),], mapping = aes(x=Start.T, y=mean_CT), color = "black", fill = "#3F4756", size=3, pch=23, show.legend = FALSE, stroke=1)+
-  geom_point(data=dat.sum[c(dat.sum$treatm=="V2" & dat.sum$Test == "CTmin"),], mapping = aes(x=Start.T, y=mean_CT), color = "black", fill = "#A3ABBD", size=3, pch=23, show.legend = FALSE, stroke=1)+
-  theme_classic()
-ggformat(PLOT2, x_title = expression(Test~Start~Temperature~(degree*C)), y_title = expression(Temperature~tolerance~(degree*C)), print = FALSE)
-PLOT2<-PLOT2 +theme(legend.position = c(0.14, 0.5), 
-                    legend.title = element_text(), 
-                    legend.background = element_rect(fill = "white", size = 0.1, color = "black"))+
-  guides(fill=guide_legend(title=expression(Delta~Field~degree*C)))
-PLOT2
-
-
-cowplot:::plot_grid(PLOT1, PLOT2,
+cowplot:::plot_grid(CTplotFIELD, CTplotFIELD2, CTplotFIELD1,
                     labels = "AUTO", 
                     nrow =1,
-                    ncol=2,
+                    ncol=3,
                     align = "hv", 
-                    label_x = c(0.3, 0.22),
-                    label_y = c(0.9)) %>% 
-  ggsave( filename = "/Users/kristakraskura/Desktop/BOX/UCSB/Research/Carpinteria marsh fish /DataAnalysis/PLOTS/Figure3_CT_VAR.png", width = 8, height = 4)
+                    label_x = c(0.2, 0.2, 0.2),
+                    label_y = c(0.9, 0.9, 0.9),
+                    rel_widths = c(1,1,1)) %>% 
+ggsave(filename = "Figures/Figure3_EnvCorrelations.png", width = 11, height = 4)
 # ggsave(plot_CTsizeF, filename = "/Users/kristakraskura/Desktop/BOX/UCSB/Research/Carpinteria marsh fish /DataAnalysis/PLOTS/Field_CTmaxCT_size.png", width = 7, height = 3.5)
-
-
-
-# saving plots ############# 
-setwd("/Users/kristakraskura/Desktop/BOX/UCSB/Research/Carpinteria - marsh fish /DataAnalysis/PLOTS/")
-
-png("Plot1_mass_weight_3tp_Dec4.png", width=6, height = 8 , res=300, units = "in")
-grid.arrange(plot_mg, plot_mm, nrow=2, ncol=1, heights=c(1,0.9))
-dev.off()
-
-png("Plot2_temp_toler_Dec4.png", width= 8, height = 4, res=300, units = "in")
-grid.arrange(plot_CTmax, plot_CT, nrow=1, ncol=2, widths = c(1,0.95))
-dev.off()
-
-png("plot3_cond_fact_Dec4.png", width=5, height = 3.5, res=300, units = "in")
-grid.arrange(plot_K)
-dev.off()
-
-png("Plot4_CTall_Dec4.png", width= 5, height = 3.5, res=300, units = "in")
-print(CTplot)
-dev.off()
-
-png("Plot5_CTsize_Dec4.png", width=7 , height =4 , res=300, units = "in")
-print(plot_CTsize)
-dev.off()
-
-
-
-
-
-# merge
-CTplot<-
-  ggplot()+
-  geom_line(data = pred.data, mapping = aes(y = ctmax_pred, x = as.numeric(temp)),
-            alpha=1, colour="grey30", lty=1)+
-  geom_line(data = pred.data, mapping = aes(y = CT_pred, x = as.numeric(temp)),
-            alpha=1, colour="grey30", lty=1)+
-  # geom_line(data = pred.data, mapping = aes(y = CT_predERmax, x = as.numeric(temp)),
-  #           alpha=1, colour="grey30", lwd=0.2, lty="dashed")+
-  # geom_line(data = pred.data, mapping = aes(y = CT_predERmin, x = as.numeric(temp)),
-  #           alpha=1, colour="grey30", lwd=0.2, lty="dashed")+
-  # geom_line(data = pred.data, mapping = aes(y = ctmax_predERmax, x = as.numeric(temp)),
-  #           alpha=1, colour="grey30", lwd=0.2, lty="dashed")+
-  # geom_line(data = pred.data, mapping = aes(y = ctmax_predERmin, x = as.numeric(temp)),
-  #           alpha=1, colour="grey30", lwd=0.2, lty="dashed" )+
-  geom_point(data=data.static.min, aes(temp, temp_tolerance,  color = treatm, fill = treatm), pch=23, size=2, alpha=1, show.legend = FALSE)+
-  geom_point(data=data.static.max, aes(temp, temp_tolerance,  color = treatm, fill = treatm), pch=21, size=2, alpha=1, show.legend = FALSE)+
-  geom_point(data[c(!(is.na(data$temp_tolerance)) & c(data$temp=="V1") & c(data$Test=="CTmax")),], mapping = aes(x = inters.V1ctmax.x, y = temp_tolerance), color = "#3F4756", fill = "#3F4756", alpha=1, pch = 21, size=2, show.legend = FALSE)+
-  geom_point(data[c(!(is.na(data$temp_tolerance)) & c(data$temp=="V2") & c(data$Test=="CTmax")),], mapping = aes(x = inters.V2ctmax.x, y = temp_tolerance), color = "#A3ABBD", fill = "#A3ABBD", alpha=1, pch = 23, size=2, show.legend = FALSE)+
-  geom_point(data[c(!(is.na(data$temp_tolerance)) & c(data$temp=="V1") & c(data$Test=="CTmin")),], mapping = aes(x = inters.V1CT.x, y = temp_tolerance), color = "#3F4756", fill = "#3F4756", alpha=1, pch = 21, size=2, show.legend = FALSE)+
-  geom_point(data[c(!(is.na(data$temp_tolerance)) & c(data$temp=="V2") & c(data$Test=="CTmin")),], mapping = aes(x = inters.V2CT.x, y = temp_tolerance), color = "#A3ABBD", fill = "#A3ABBD", alpha=1, pch = 23, size=2, show.legend = FALSE)+
-  geom_point(data=datsum, aes(as.numeric(temp), mean_CT, group = treatment,  fill = treatment), color = "black", size=3, alpha=1, pch=23)+
-  geom_point(data=datsum, aes(as.numeric(temp), mean_CTmax, group = treatment,  fill = treatment), color = "black", size=3, alpha=1, pch=21)+
-  geom_point(mapping=aes(x = inters.V1CT.x, y=inters.V1CT.y), pch=23,  size=4, alpha=1, color = "black", fill = "#A3ABBD")+
-  geom_point(mapping=aes(x = inters.V1ctmax.x, y=inters.V1ctmax.y), pch=21,  size=4, alpha=1, color = "black", fill = "#A3ABBD")+
-  geom_point(mapping=aes(x = inters.V2CT.x, y=inters.V2CT.y), pch=23,  size=4, alpha=1, color = "black", fill = "#3F4756")+
-  geom_point(mapping=aes(x = inters.V2ctmax.x, y=inters.V2ctmax.y), pch=21,  size=4, alpha=1, color = "black", fill = "#3F4756")+# geom_point(data[c(!(is.na(data$temp_tolerance)) & c(data$temp=="V1")),],
-  ylim(0, 45)+
-  xlim(10, 30)+
-  scale_fill_manual(values=c("COLD" = "#00518C", "HOT" = "#673F00",  "MED" = "#DBA11C", "LOW" ="#7FADF1",  "V1" = "#A3ABBD", "V2" =  "#3F4756") )+
-  scale_color_manual(values=c("COLD" = "#00518C", "HOT" = "#673F00",  "MED" = "#DBA11C", "LOW" ="#7FADF1",  "V1" = "#A3ABBD", "V2" =  "#3F4756") )+
+ 
+## 1. [suppl 2]: LAB - Growth, mm------
+plot_growth2 <- ggplot()+
+  geom_line(data = pred.datamm, mapping = aes(x = temp, y = pred.GRmm), color = "grey30", lwd = 0.9)+
+  geom_line(data = pred.datamm, mapping = aes(x = temp, y = pred.GRmm+pred.GRmm.se), color = "grey30", lwd = 0.2, lty=2)+
+  geom_line(data = pred.datamm, mapping = aes(x = temp, y = pred.GRmm-pred.GRmm.se), color = "grey30", lwd = 0.2, lty=2)+
+  geom_line(data = growth.mod.data, aes(x = temp, GR_mm_d, color = temp_treatment.x), alpha=0.3)+
+  geom_point(data = growth.mod.data, aes(x = temp, GR_mm_d, color = temp_treatment.x, fill = temp_treatment.x), alpha= 0.3, pch = 22, size=2)+
+  # geom_text(data = growth.mod.data, aes(x = temp, GR_mm_d, label = paste("n=",n.y, sep="")), nudge_x = 0.6, size = 3)+
+  geom_text(data = NULL, aes(x = c(12, 12, 12, 17, 17, 17, 22, 22, 22, 27, 27), y = c(0.02, 0.0125, 0.005, 0.02, 0.0125, 0.005, 0.02, 0.0125, 0.005,0.02, 0.0125)),
+            label = c(14, 23, 21, 22, 24, 18,22, 25, 14, 11, 6), size = 3)+
+  geom_text(data = NULL, aes(x = 12, y = 0.03), label = "n (tank)", size = 3)+
+  geom_point(data = growth.mod.mean, aes(x = temp, mean_GRmm, color = temp_treatment.x, fill = temp_treatment.x), alpha= 1, pch = 22, size=3)+
+  geom_errorbar(data = growth.mod.mean, mapping = aes(x = temp, ymin = mean_GRmm-sd_GRmm, ymax = mean_GRmm+sd_GRmm, color = temp_treatment.x), size=0.2, width = 0.1)+
+  scale_color_manual(values=c("12" ="#00518C", "17" = "#008A60","22" ="#DBA11C", "27" = "#BE647D", "V2" = "black", "V1" = "#A3ABBD") )+
+  scale_fill_manual(values=c("12" ="#00518C",  "17" = "#008A60","22" ="#DBA11C","27" ="#BE647D", "V2" = "black", "V1" = "#A3ABBD") )+
   theme_classic()
-  # geom_line(aes(temp, mean_CTmax, group = timepoint))
-  # annotate("text", x=1, y=44, colour="darkred", size=4, label="CTmax", hjust=0)+
-  # annotate("text", x=1, y=41, colour="dodgerblue", size=4, label="CTmin", hjust=0)
-ggformat(CTplot, x_title = "Temperature treatment", y_title = expression(Temperature~tolerance~(degree*C)), print = TRUE)
-CTplot <- CTplot + theme(legend.position = "none")
+  xlim(10,30)+
+  ylim(0, 0.2)
+ggformat(plot_growth2, x_title = "Temperature treatment", y_title = expression(Growth~rate~(mm~d^-1)), print=F, size_text = 12)
+plot_growth2 <- plot_growth2 + theme (legend.position = "none")
+
+plot_growth2B <- ggplot()+
+  geom_point(data2.sum.w[c(!(is.na(data2.sum.w$GR_mm_d)) & c(data2.sum.w$temp_treatment.x=="V1")),],
+             mapping = aes(x = temp_treatment.x, y = GR_mm_d), color = "#A3ABBD", fill = "#A3ABBD", pch = 22, size=2, alpha = 0.3)+
+  geom_point(data2.sum.w[c(!(is.na(data2.sum.w$GR_mm_d)) & c(data2.sum.w$temp_treatment.x=="V2")),],
+             mapping = aes(x = temp_treatment.x, y = GR_mm_d), color = "black", fill = "black",  pch = 22, size=2, alpha = 0.3)+
+  geom_point(data = growth.mod.mean[growth.mod.mean$temp_treatment.x == "V1" | growth.mod.mean$temp_treatment.x == "V2",],
+             aes(x = temp_treatment.x, mean_GRmm, color = temp_treatment.x, fill = temp_treatment.x),
+             alpha= 1, pch = 22, size=3)+
+  geom_errorbar(data = growth.mod.mean[growth.mod.mean$temp_treatment.x == "V1" | growth.mod.mean$temp_treatment.x == "V2",],
+                mapping = aes(x = temp_treatment.x, ymin = mean_GRmm-sd_GRmm, ymax = mean_GRmm+sd_GRmm, color = temp_treatment.x),
+                size=0.2, width = 0.1)+
+  # geom_text(data = data2.sum.w, aes(x = temp_treatment.x, GR_mm_d, label = paste("n=",n.y, sep="")), nudge_x = -0.6, size = 3)+
+  geom_text(data = NULL, aes(x = c(1,1, 2,2,2), y = c(0.02, 0.0125, 0.02, 0.0125, 0.005)),
+            label = c(20, 16, 15, 17, 17), size = 3)+
+  scale_color_manual(values=c("12" ="#00518C", "17" = "#008A60","22" ="#DBA11C", "27" = "#BE647D", "V2" = "black", "V1" = "#A3ABBD") )+
+  scale_fill_manual(values=c("12" ="#00518C",  "17" = "#008A60","22" ="#DBA11C","27" ="#BE647D", "V2" = "black", "V1" = "#A3ABBD") )+
+  theme_classic()+
+  # ylim(-15, 40)+
+  ylim(0, 0.2)
+ggformat(plot_growth2B, x_title = "Temperature treatment", y_title = expression(Growth~rate~(mm~d^-1)), print=F, size_text = 12)
+plot_growth2B <- plot_growth2B + theme (legend.position = "none", 
+                                        axis.title.y = element_blank(),
+                                        axis.text.y = element_blank(),
+                                        axis.title.x = element_blank())
+
+plot.size1 <- cowplot::plot_grid(plot_growth2, plot_growth2B,
+                                 labels = c("AUTO"),
+                                 rel_widths = c(1, 0.2),
+                                 align = "h")
+ggsave(plot.size1, filename = "./Figures/FigureS2_growth.png", width = 6, height = 4.5)
+
+
+## 2. [suppl 1b]: Figures CTmax CT between-test variation: --------
+data$TestID2<-factor(data$TestID2, levels = c("LAB-12", "LAB-17", "LAB-22", "LAB-27", "LAB-V1", "LAB-V2", 
+                     "FIELD-44382", "FIELD-44386", "FIELD-44388", "FIELD-44391",
+                     "FIELD-44460", "FIELD-44461"))
+data.sum$TestID2<-factor(data.sum$TestID2, levels = c("LAB-12", "LAB-17", "LAB-22", "LAB-27", "LAB-V1", "LAB-V2", 
+                     "FIELD-44382", "FIELD-44386", "FIELD-44388", "FIELD-44391",
+                     "FIELD-44460", "FIELD-44461"))
+
+plot_CTmaxmin <- ggplot(data[!c(data$Field_Lab == "LAB" & !c(data$temp_treatment=="V1" | data$temp_treatment=="V2")),],
+                        aes(x = TestID2, y = temp_tolerance, fill = mean.Env.Temp, color = mean.Env.Temp))+
+  geom_text_repel(data = data.sum[!c(data.sum$TestID2 == "LAB-27" | data.sum$TestID2 == "LAB-22" | data.sum$TestID2 == "LAB-17" | data.sum$TestID2 == "LAB-12") & data.sum$Test == "CTmin",],
+                  aes(x = TestID2, y = mean_CT, label = n, fill = NULL), min.segment.length = 0.1, nudge_x = 0.2, direction = "y", hjust = "left", size = 2, color = "black")+
+  geom_text_repel(data = data.sum[!c(data.sum$TestID2 == "LAB-27" | data.sum$TestID2 == "LAB-22" | data.sum$TestID2 == "LAB-17" | data.sum$TestID2 == "LAB-12") & data.sum$Test == "CTmax",],
+                  aes(x = TestID2, y = mean_CT, label = n, fill = NULL), min.segment.length =  0.1, nudge_x = 0.2, direction = "y", hjust = "left", size = 2, color = "black")+
+  geom_point(alpha=0.7, size=1.5, pch=21)+
+  geom_point(data.sum[!c(data.sum$TestID2 == "LAB-27" | data.sum$TestID2 == "LAB-22" | data.sum$TestID2 == "LAB-17" | data.sum$TestID2 == "LAB-12"),],
+             mapping = aes(y = mean_CT, x = TestID2, fill = NULL), alpha=1, size=3, color = "black", pch=21)+
+  geom_vline(xintercept = c(2.5), linetype="dashed")+
+  scale_fill_viridis_c(option = "D", name = "Mean T (ºC)")+
+  scale_color_viridis_c(option = "D", guide = NULL)+
+  scale_x_discrete(labels = c("LAB-V1" = "V1", "LAB-V2" = "V2", "FIELD-44382" = "Jul-5", "FIELD-44386" = "Jul-9", "FIELD-44388" = "Jul-11", "FIELD-44391" = "Jul-14",
+                     "FIELD-44460" = "Sep-21", "FIELD-44461" = "Sep-22"))+
+  theme_classic()+
+  ylim(0, 42)
+ggformat(plot_CTmaxmin, x_title = "Temperature treatment", y_title = expression(Temperature~tolerance~(degree*C)), size_text = 12,  print=FALSE)
+plot_CTmaxmin <- plot_CTmaxmin+theme(legend.position = c(0.9, 0.5),
+                                     axis.title.y = element_blank())
+
+### !!!! ADD POSTHOCS ---------
+plot_CTmaxminLAB <- ggplot(data[c(data$Field_Lab == "LAB" & !c(data$temp_treatment=="V1" | data$temp_treatment=="V2")),],
+                        aes(x = temp, y = temp_tolerance, fill = TestID2, color = TestID2))+
+  geom_line(data = predCTmaxStatic, aes(x = temp, y = upr, fill = NULL, color = NULL), color = "grey30", lwd = 0.2, lty=2 )+
+  geom_line(data = predCTmaxStatic, aes(x = temp, y = fit, fill = NULL, color = NULL), color = "grey30", lwd = 0.2, lty=1 )+
+  geom_line(data = predCTmaxStatic, aes(x = temp, y = lwr, fill = NULL, color = NULL), color = "grey30", lwd = 0.2, lty=2)+
+  geom_line(data = predCTminStatic, aes(x = temp, y = upr, fill = NULL, color = NULL), color = "grey30", lwd = 0.2, lty=2 )+
+  geom_line(data = predCTminStatic, aes(x = temp, y = fit, fill = NULL, color = NULL), color = "grey30", lwd = 0.2, lty=1 )+
+  geom_line(data = predCTminStatic, aes(x = temp, y = lwr, fill = NULL, color = NULL), color = "grey30", lwd = 0.2, lty=2)+# intercept = fixef(mod1)[1], slope = fixef(mod1)[2])+
+  geom_text_repel(data = data.sum[c(data.sum$TestID2 == "LAB-27" | data.sum$TestID2 == "LAB-22" | data.sum$TestID2 == "LAB-17" | data.sum$TestID2 == "LAB-12") & data.sum$Test == "CTmin",],
+                  aes(x = temp, y = mean_CT, label = n, fill = NULL), min.segment.length = 0.1, nudge_x = 1, direction = "y", hjust = "left", size = 2, color = "black")+
+  geom_text_repel(data = data.sum[c(data.sum$TestID2 == "LAB-27" | data.sum$TestID2 == "LAB-22" | data.sum$TestID2 == "LAB-17" | data.sum$TestID2 == "LAB-12") & data.sum$Test == "CTmax",],
+                  aes(x = temp, y = mean_CT, label = n, fill = NULL), min.segment.length =  0.1, nudge_x = 1, direction = "y", hjust = "left", size = 2, color = "black")+
+  geom_point(alpha=0.7, size=1.5, pch=21)+
+  geom_point(data.sum[c(data.sum$TestID2 == "LAB-27" | data.sum$TestID2 == "LAB-22" | data.sum$TestID2 == "LAB-17" | data.sum$TestID2 == "LAB-12"),],
+             mapping = aes(y = mean_CT, x = temp, fill = NULL), alpha=1, size=3, color = "black", pch=21)+
+  scale_color_manual(values=c("LAB-12" ="#00518C", "LAB-17" = "#008A60","LAB-22" ="#DBA11C", "LAB-27" = "#BE647D") )+
+  scale_fill_manual(values=c("LAB-12" ="#00518C",  "LAB-17" = "#008A60","LAB-22" ="#DBA11C","LAB-27" ="#BE647D") )+
+  theme_classic()+
+  ylim(0, 42)+
+  xlim(11, 28)
+ggformat(plot_CTmaxminLAB, x_title = "Temperature treatment", y_title = expression(Temperature~tolerance~(degree*C)), size_text = 12,  print=FALSE)
+plot_CTmaxminLAB <- plot_CTmaxminLAB + theme(legend.position = "none")
+
+cowplot::plot_grid(plot_CTmaxminLAB, plot_CTmaxmin,
+                   labels = c('A', 'B'),
+                   rel_widths = c(0.5, 1),
+                   align = "hv") %>% 
+ggsave( filename = "./Figures/FigureS2_CTresults.png", width = 8, height = 4)
+
+
+
+## 3. [suppl 3] scaling plot ------
+plot_CTsize<-ggplot(data=data, aes(y=temp_tolerance , x=mass_mg,
+                                   group = interaction(Test, temp),
+                                   fill = Field_Lab, color = Field_Lab)) +
+  geom_point( colour="black", pch=21, size=2)+
+  facet_wrap(.~Test, scale="free")+
+  theme_classic()+
+  scale_fill_locuszoom()
+ggformat(plot_CTsize, x_title = "Body mass (mg)", y_title = expression(Temperature~tolerance~(degree*C)), print = TRUE)
+
+plot_CTsize<-ggplot(data=data, aes(y=temp_tolerance , x=TL_mm,
+                                   group = interaction(Test, temp),
+                                   fill = Field_Lab, color = Field_Lab)) +
+  geom_point( colour="black", pch=21, size=2)+
+  facet_wrap(.~Test, scale="free")+
+  theme_classic()+
+  scale_fill_locuszoom()
+ggformat(plot_CTsize, x_title = "Body Lentgth (mm)", y_title = expression(Temperature~tolerance~(degree*C)), print = TRUE, size_text = 12)
+ggsave( filename = "./Figures/Figure3_scaling_TLmm.png", width = 8, height = 4)
+
+
+
 
 
