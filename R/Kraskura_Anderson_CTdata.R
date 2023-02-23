@@ -24,7 +24,7 @@ BICdelta<-function(BICtable){
 }
 
 # set colors 
-cols.klab<- c("#00518C", "#008A60", "#DBA11C", "#BE647D", "black", "#A3ABBD", "darkred")  # 27, 22, 17, 12, V1, V2
+cols.klab<- c("#00518C", "#008A60", "#DBA11C", "#BE647D", "black", "#A3ABBD", "#00CAFF")  # 27, 22, 17, 12, V1, V2, "field"
 # cols.tide<-c("#3D459F", "#BE647D", "#001041")
 
 
@@ -57,10 +57,11 @@ data.VARmax<-data[data$Stat_Var == "variable" & data$Test == "CTmax",  ]
 #field tests:
 data.minF<-data[c(data$Field_Lab == "FIELD" & data$Test=="CTmin"),] # all Field CTmax
 data.maxF<-data[c(data$Field_Lab == "FIELD" & data$Test=="CTmax"),] # all Field CTmin
-
+summary(data.minF)
+summary(data.maxF)
 
 # import field temps to get daily min and max temps.
-fieldTempsJul<- read.csv("./Data/SiteTempsJul.csv")
+fieldTempsJul<- read.csv("./Data/Analysis source/SiteTempsJul.csv")
 fieldTempsJul<- fieldTempsJul %>% 
   dplyr::select(max_temp, min_temp, mean_temp, range_temp, y, day, DateTime) %>% 
   distinct(day, .keep_all = TRUE) %>% 
@@ -72,7 +73,7 @@ fieldTempsJul<- fieldTempsJul %>%
   filter(day == 9 | day == 11 | day == 14) %>% 
   dplyr::select(max.Env.Temp, min.Env.Temp, mean.Env.Temp, delta.T, day, Date)
   
-fieldTempsSep<- read.csv("./Data/SiteTempsSep.csv")
+fieldTempsSep<- read.csv("./Data/Analysis source/SiteTempsSep.csv")
 fieldTempsSep<- fieldTempsSep %>% 
   dplyr::select(max_temp, min_temp, mean_temp, range_temp, y, day, DateTime) %>% 
   distinct(day, .keep_all = TRUE) %>% 
@@ -286,7 +287,7 @@ model.CTmax.11<-lmer(temp_tolerance ~ max.Env.Temp + Temp_test_start + delta.T +
 # very convincing that size matters, add as a covariate also below 
 BICdelta(BIC(model.CTmax.0, model.CTmax.1, model.CTmax.2, model.CTmax.3, model.CTmax.4, model.CTmax.5, model.CTmax.6,
              model.CTmax.1.b, model.CTmax.2.b, model.CTmax.3.b,model.CTmax.3.c, model.CTmax.4.b, model.CTmax.5.b, model.CTmax.6.b,
-             model.CTmax.7,model.CTmax.7.d, model.CTmax.7.b, model.CTmax.7.c,
+             model.CTmax.7,model.CTmax.7.b, 
              model.CTmax.8, model.CTmax.9, model.CTmax.10, model.CTmax.11))
  
 # model.CTmax.3.b  5 683.9662  0.00000 << best 
@@ -383,9 +384,9 @@ CTplotFIELD<-ggplot(data=data, aes(y=temp_tolerance, x=Temp_test_start, shape = 
   annotate(geom = "text", y = -7, x = 17, hjust = 0, color = "black", size = 3.5,
          label = bquote(Lab ~ n[tests] == ~ .(n.tests.min.L) ~ "(" * n[Indiv] == ~ .(n.indiv.min.L) * ")"))+
   scale_fill_manual(values=c("12" ="#00518C", "17" = "#008A60","22" ="#DBA11C", "27" = "#BE647D", "V2" = "black", "V1" = "#A3ABBD", "FIELD" = "#00CAFF"),
-                    name = "", labels = c("12ºC", "17ºC", "22ºC", "27ºC", "V2", "V1", "Field"))+
+                    name = "", labels = c("12ºC", "17ºC", "22ºC", "27ºC", "Field", "V2", "V1"))+
   scale_color_manual(values=c("12" ="#00518C", "17" = "#008A60","22" ="#DBA11C", "27" = "#BE647D", "V2" = "black", "V1" = "#A3ABBD", "FIELD" = "#00CAFF"),
-                     name = "", labels = c("12ºC", "17ºC", "22ºC", "27ºC", "V2", "V1", "Field"))+
+                     name = "", labels = c("12ºC", "17ºC", "22ºC", "27ºC", "Field", "V2", "V1"))+
   scale_y_continuous(limits = c(-8, 47), breaks = c(seq(0, 45, 5)))
 ggformat(CTplotFIELD, x_title = expression(Test~start~temperature~(degree*C)), y_title = expression(Temperature~tolerance~(degree*C)), print = F, size_text = 12)
 CTplotFIELD <- CTplotFIELD + theme(legend.position = "none", 
@@ -404,9 +405,9 @@ CTplotFIELD2<-ggplot(data=data, aes(y=temp_tolerance, x=mean.Env.Temp, shape = S
   guides(size = "none", alpha = "none")+
   theme_classic()+
   scale_fill_manual(values=c("12" ="#00518C", "17" = "#008A60","22" ="#DBA11C", "27" = "#BE647D", "V2" = "black", "V1" = "#A3ABBD", "FIELD" = "#00CAFF"),
-                     name = "", labels = c("12ºC", "17ºC", "22ºC", "27ºC", "V2", "V1", "Field"))+
+                     name = "", labels = c("12ºC", "17ºC", "22ºC", "27ºC", "Field", "V2", "V1"))+
   scale_color_manual(values=c("12" ="#00518C", "17" = "#008A60","22" ="#DBA11C", "27" = "#BE647D", "V2" = "black", "V1" = "#A3ABBD", "FIELD" = "#00CAFF"),
-                     name = "", labels = c("12ºC", "17ºC", "22ºC", "27ºC", "V2", "V1", "Field"))+
+                     name = "", labels = c("12ºC", "17ºC", "22ºC", "27ºC","Field", "V2", "V1"))+
   scale_y_continuous(limits = c(-8, 47), breaks = c(seq(0, 45, 5)))+
   annotate(geom = "text", y = 44, x = 15, hjust = 0, color = "black", size = 3.5,
          label = bquote( CT[max] == ~ .(CTmax.int) ~ "+" ~ .(CTmax.slopeMean) * T[mean] ~ + .(CTmax.slopeTL) * "TL"))
@@ -437,7 +438,7 @@ CTplotFIELD1 <- CTplotFIELD1 + theme(legend.position = "none",
                                      legend.title = element_text(), 
                                      axis.title.y = element_blank())
 
-cowplot:::plot_grid(CTplotFIELD, CTplotFIELD2, CTplotFIELD1,
+cowplot:::plot_grid(CTplotFIELD2, CTplotFIELD1, CTplotFIELD,
                     labels = "AUTO", 
                     nrow =1,
                     ncol=3,
