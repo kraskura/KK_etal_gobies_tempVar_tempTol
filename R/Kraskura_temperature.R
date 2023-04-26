@@ -1,12 +1,12 @@
 
 library(devtools)
-install_github("kraskura/ggformat2")
 library(here)
 library(tidyverse)
 library(chron)
 library(lubridate)
 # plotting 
 library(gridExtra)
+# install_github("kraskura/ggformat2")
 library(ggformat2) # kraskura/ggformat2
 library(cowplot)
 
@@ -114,7 +114,7 @@ dataLab.test.days<-dataLab.test.days[!c(dataLab.test.days$treatm == "27" & dataL
 write_csv(dataLab.test.days, file = "./Data/Analysis source/Lab_TestDaytemps_2019_allTreatm.csv")
 write_csv(dataLab.test.daysVar, file = "./Data/Analysis source/Lab_TestDaytemps_2019_varTreatm.csv")
 
-# Manuscript Fig 2: figure all treatment together -----
+# Manuscript Fig 2A: figure all treatment together -----
 lab.SECTION<-ggplot(data.plot[!c(data.plot$treatm == "V2"), ], aes(LocalDateTime, TEMP, color = treatm, fill = treatm,
                                    group = interaction(mo, day, treatm, tank)))+
   scale_y_continuous(limits = c(3, 35), breaks = seq(5, 35, 5))+
@@ -134,10 +134,10 @@ lab.SECTION<- lab.SECTION+theme(axis.text.x = element_text( size=11),
                                # legend.background = element_rect(colour = NA, fill = NA), 
                                # legend.key.width = unit(1, "line"))
 
-lab.SECTION
+# lab.SECTION
 
 
-## Figure i) SUPPL : daily var all tanks, all treatm ---------------
+## Figure i): daily var all tanks, all treatm ---------------
 daily.p.ALL <- ggplot(dataLab, aes(minutes.day, TEMP, group = interaction(treatm), color = treatm))+
   # geom_point(size=1, pch=".")+
   ylim(5, 35)+
@@ -152,7 +152,7 @@ ggformat(daily.p.ALL, title = "", y_title = expression(Temperature~(degree*C)), 
 daily.p.ALL <- daily.p.ALL + theme(legend.position = "top")
 
 
-## Figure ii) SUPPL: static treatments ---------------
+## Figure ii):  static treatments ---------------
 daily.p <- ggplot(dataLab.S.plot, aes(minutes.day/60, TEMP, group = interaction(treatm), color = treatm))+
   ylim(5, 35)+
   scale_color_manual(values=c("#00518C", "#008A60", "#DBA11C", "#BE647D") )+
@@ -162,7 +162,7 @@ daily.p <- ggplot(dataLab.S.plot, aes(minutes.day/60, TEMP, group = interaction(
 ggformat(daily.p, title = "", y_title = expression(Temperature~(degree*C)), x_title = "Time in the day (h)", size_text = 15, print = F)
 daily.p <- daily.p + theme(legend.position = "none")
 
-## Figure ii) SUPPL: V2, stochastic variable treatment; stacked trends ---------------
+## Figure ii): V2, stochastic variable treatment; stacked trends ---------------
 daily.p.V2 <- ggplot(dataLab.V2.plot, aes(minutes.day/60, TEMP, group = interaction(treatm), color = treatm))+
   ylim(5, 35)+
   scale_color_manual(values=c("#3F4756"))+
@@ -216,24 +216,24 @@ ggformat(lab.SECTION.V1, title = "", y_title = expression(Temperature~(degree*C)
 lab.SECTION.V1<- lab.SECTION.V1+theme(legend.position = c(0.1, 0.8))
 
 
-## saving figures -------
-plot_grid(lab.SECTION.V1, daily.p.V1,
-          lab.SECTION.V2, daily.p.V2,
-          ncol = 2, align = "hv",
-          rel_widths = c(2, 1.2), rel_heights = c(1, 1)) %>%
-  ggsave(filename = "./Figures/Figure1_Lab_variable.png", width = 6, height = 5)
+## saving figures -------v
+# plot_grid(lab.SECTION.V1, daily.p.V1,
+#           lab.SECTION.V2, daily.p.V2,
+#           ncol = 2, align = "hv",
+#           rel_widths = c(2, 1.2), rel_heights = c(1, 1)) %>%
+#   ggsave(filename = "./Figures/Figure1_Lab_variable.png", width = 6, height = 5)
 
-plot_grid(daily.p,
-          ncol = 1, align = "hv") %>%
-  ggsave(filename = "./Figures/Figure1_Lab_static.png", width = 3.5, height = 4)
+# plot_grid(daily.p,
+#           ncol = 1, align = "hv") %>%
+#   ggsave(filename = "./Figures/Figure1_Lab_static.png", width = 3.5, height = 4)
+# 
+# plot_grid(daily.p.V1,
+#           ncol = 1, align = "hv") %>%
+#   ggsave(filename = "./Figures/Figure1_Lab_V1.png", width = 3, height = 3)
 
-plot_grid(daily.p.V1,
-          ncol = 1, align = "hv") %>%
-  ggsave(filename = "./Figures/Figure1_Lab_V1.png", width = 3, height = 3)
-
-plot_grid(daily.p.V2,
-          ncol = 1, align = "hv") %>%
-  ggsave(filename = "./Figures/Figure1_Lab_V2.png", width = 3, height = 3)
+# plot_grid(daily.p.V2,
+#           ncol = 1, align = "hv") %>%
+#   ggsave(filename = "./Figures/Figure1_Lab_V2.png", width = 3, height = 3)
 
 
 plot_grid(lab.SECTION,
@@ -294,13 +294,17 @@ daily.pFcont<-ggplot(dataCarp, aes(LocalDateTime, TEMP, color = as.factor(SiteID
   # annotate("segment", x = as.POSIXct("2021-02-20"), xend = as.POSIXct("2021-05-15"), y = 17, yend = 17, color = "#008A60", lwd=2)+
   annotate("segment", x = as.POSIXct("2019-08-01"), xend = as.POSIXct("2019-09-01"), y = 12, yend = 12,
            arrow = arrow(length = unit(.2,"cm")), color = "#00518C", lwd=2, alpha=1)+
-  geom_point( size=0.4,  pch=".", show.legend = FALSE)+
+  geom_point( size=0.4,  pch=".", show.legend = FALSE, alpha = 0.2)+
   geom_point(dataCarp[dataCarp$SiteID == "SITE3",], mapping = aes(LocalDateTime, TEMP, color = as.factor(SiteID)),
-             size=0.4,  pch=".", show.legend = FALSE)+ # to order the sites
+             size=0.4,  pch=".", show.legend = FALSE, alpha = 0.2)+ # to order the sites
   geom_point(dataCarp[dataCarp$SiteID == "SITE4",], mapping = aes(LocalDateTime, TEMP, color = as.factor(SiteID)),
-             size=0.4,  pch=".", show.legend = FALSE)+ # to order the sites
- scale_color_manual(values = c("SITE2" =  "grey40", "SITE3" = "grey40", "SITE4" = "black", "TestSite" = "#00CAFF", "SITE1" = "grey"))
-  # ylim(0, 40)
+             size=0.4,  pch=".", show.legend = FALSE, alpha = 0.2)+ # to order the sites
+ # scale_color_manual(values = c("SITE2" =  "grey40", "SITE3" = "grey40", "SITE4" = "black", "TestSite" = "#00CAFF", "SITE1" = "grey"))
+  scale_color_manual(values = c("SITE2" = "#A149FA",
+                  "SITE3" = "#3B44F6",
+                  "SITE1" = "black",
+                  "SITE4" = "#3EC70B",
+                  "TestSite" = "#00CAFF"))# ylim(0, 40)
   # annotate("segment", x = as.POSIXct("2020-11-12"), xend = as.POSIXct("2021-03-20"), y = 12, yend = 12, color = "#00518C", lwd=2)
 ggformat(daily.pFcont, title = "", y_title = expression(Temperature~(degree*C)), x_title = "Time", size_text = 12)
 
@@ -383,15 +387,15 @@ ggformat(Carp.SECTION.V2, title = "", y_title = expression(Temperature~(degree*C
 
 
 ## Figure iv) ---------
-SMOOTHdaily.p1.Carp.V1 <- ggplot(dataCarp.V1[!(dataCarp.V1$SiteID == "SITE2"),], aes(minutes.day/60, TEMP, group = interaction(SiteID)))+
-  ylim(0, 35)+
-  # scale_color_manual(values=c("#A3ABBD", "#3F4756"))+
-  annotate("rect", xmin=0, xmax=360/60, ymin=-Inf, ymax=Inf, alpha=0.3, fill="grey90") +
-  annotate("rect", xmin=960/60, xmax=1440/60, ymin=-Inf, ymax=Inf, alpha=0.3, fill="grey90") +
-  geom_line(aes(minutes.day/60, TEMP, group = interaction(mo, day, SiteID)), size=0.1, alpha=0.4, color = "black")+
-  # geom_smooth(se = TRUE, color = "#926C00")+
-  facet_wrap(.~SiteID, nrow = 3)
-ggformat(SMOOTHdaily.p1.Carp.V1, title = "", y_title = expression(Temperature~(degree*C)), x_title = "Time in the day (h)", size_text = 12, print = T)
+# SMOOTHdaily.p1.Carp.V1 <- ggplot(dataCarp.V1[!(dataCarp.V1$SiteID == "SITE2"),], aes(minutes.day/60, TEMP, group = interaction(SiteID)))+
+#   ylim(0, 35)+
+#   # scale_color_manual(values=c("#A3ABBD", "#3F4756"))+
+#   annotate("rect", xmin=0, xmax=360/60, ymin=-Inf, ymax=Inf, alpha=0.3, fill="grey90") +
+#   annotate("rect", xmin=960/60, xmax=1440/60, ymin=-Inf, ymax=Inf, alpha=0.3, fill="grey90") +
+#   geom_line(aes(minutes.day/60, TEMP, group = interaction(mo, day, SiteID)), size=0.1, alpha=0.4, color = "black")+
+#   # geom_smooth(se = TRUE, color = "#926C00")+
+#   facet_wrap(.~SiteID, nrow = 3)
+# ggformat(SMOOTHdaily.p1.Carp.V1, title = "", y_title = expression(Temperature~(degree*C)), x_title = "Time in the day (h)", size_text = 12, print = T)
 
 
 ## Figure iv) : more stable variable treatment; continuous trends ---------------
@@ -428,15 +432,15 @@ daily.p1F <- daily.p1F + theme(legend.position = "top")
 ggsave(filename = "./Figures/Figure1_Field_full.png", daily.pFcont, width = 9, height = 3)
 ggsave(filename = "./Figures/Figure1_Field_site1.png", SMOOTHdaily.p.CarpVAR, width = 7, height = 3)
 
-plot_grid(Carp.SECTION.V1, Carp.SECTION.V2,
-          ncol = 2, align = "hv",
-          rel_heights = c(1, 1)) %>% 
-ggsave(filename = "./Figures/Figure1_Field_variable.png", width = 6, height = 5)
+# plot_grid(Carp.SECTION.V1, Carp.SECTION.V2,
+#           ncol = 2, align = "hv",
+#           rel_heights = c(1, 1)) %>% 
+# ggsave(filename = "./Figures/Figure1_Field_variable.png", width = 6, height = 5)
 
-plot_grid(daily.p1.Carp.V1, daily.p1.Carp.V2,
-          ncol = 2, align = "hv",
-          rel_heights = c(1, 1)) %>% 
-  ggsave(filename = "./Figures/Figure1_Field_variable.png", width = 6, height = 5)
+# plot_grid(daily.p1.Carp.V1, daily.p1.Carp.V2,
+#           ncol = 2, align = "hv",
+#           rel_heights = c(1, 1)) %>% 
+#   ggsave(filename = "./Figures/Figure1_Field_variable.png", width = 6, height = 5)
 
 # plot_grid(plot_grid(SMOOTHdaily.p.V1V2, NULL, nrow=2, rel_heights = c(0.7, 0.28)), SMOOTHdaily.p.CarpV1V2, 
 #             align = "v", rel_widths = c(1.25, 1))
@@ -445,7 +449,7 @@ plot_grid(daily.p1.Carp.V1, daily.p1.Carp.V2,
 # data frames ----
 dataF %>% 
   group_by(SiteID) %>% 
-  summarize(minTEMP = min(TEMP), maxTEMP = max(TEMP), meanTEMP = mean(TEMP), dailyDelta = maxTEMP - minTEMP, 
+  summarize(minTEMP = min(TEMP), maxTEMP = max(TEMP), meanTEMP = mean(TEMP), absoluteDelta = maxTEMP - minTEMP, 
             n = n(), 
             minDate = min(DateTime), 
             maxDate = max(DateTime))
@@ -475,5 +479,6 @@ deltaDay %>%
   group_by(SiteID) %>% 
   summarize(mean_dailyDELTA_TEMP = mean(DELTA), sd_dailyDELTA_TEMP = sd(DELTA), n = n())
 
+# dataCarp
 
   

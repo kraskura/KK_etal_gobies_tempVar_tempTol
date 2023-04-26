@@ -42,7 +42,8 @@ plotFieldData<-function(data, yPlot, moPlot, dPlot1, dPlot2, printplot = FALSE){
 
   plotname <- paste("Figures/Field temps sites/FieldTemp_y", yPlot, "mo", moPlot,"_dStart_", dPlot1, ".png", sep ="")
   siteColors <- c("SITE2" = "#A149FA",
-                  "SITE3" = "#3B44F6", "SITE1" = "black",
+                  "SITE3" = "#3B44F6",
+                  "SITE1" = "black",
                   "SITE4" = "#3EC70B",
                   "TestSite" = "#00CAFF")
 # "#F7EC09"
@@ -69,7 +70,9 @@ plotFieldData<-function(data, yPlot, moPlot, dPlot1, dPlot2, printplot = FALSE){
            y_title = expression(Temperature~(degree*C)),
            x_title = "",
            size_text = 10, print = printplot)
-  plot.site <- plot.site + theme(axis.title.x = element_blank(), legend.position = "none")
+  plot.site <- plot.site + theme(
+    # axis.title.x = element_blank(),
+    legend.position = "none")
 
   ggsave(filename = plotname, plot.site, width = 4, height = 2)
 

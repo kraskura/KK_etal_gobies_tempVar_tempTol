@@ -1,14 +1,11 @@
 
 library(ggformat2) # from kraskura/ggformat github package. 
-library(ggsci)
 library(chron)
 library(lubridate)
 library(data.table)
 library(zoo)
 library(ggrepel)
-library(lattice)
 library(lme4)
-library(car)
 library(emmeans)
 library(merTools)
 library(lmerTest) 
@@ -24,7 +21,7 @@ BICdelta<-function(BICtable){
 }
 
 # set colors 
-cols.klab<- c("#00518C", "#008A60", "#DBA11C", "#BE647D", "black", "#A3ABBD", "#00CAFF")  # 27, 22, 17, 12, V1, V2, "field"
+cols.klab<- c("#00518C", "#008A60", "#DBA11C", "#BE647D", "#A3ABBD","black", "#00CAFF")  # 27, 22, 17, 12, V1, V2, "field"
 # cols.tide<-c("#3D459F", "#BE647D", "#001041")
 
 
@@ -124,7 +121,9 @@ data2$temp_treatment[data2$temp_treatment == "var2"]<-"V2"
 data2.sum.all<-data2 %>%
   dplyr::group_by(treatment, temp_treatment, tank, timepoint) %>% 
   summarise(mean_mg=mean(mass_mg), sd_mg=sd(mass_mg), min_mg=min(mass_mg), max_mg=max(mass_mg),
-            mean_mm=mean(TL_mm), sd_mm=sd(TL_mm), min_mm=min(TL_mm), max_mm=max(TL_mm), n=length(!is.na(mass_mg)))
+            mean_mm=mean(TL_mm), sd_mm=sd(TL_mm), min_mm=min(TL_mm), max_mm=max(TL_mm), n=length(!is.na(mass_mg))) %>% 
+  as.data.frame()
+
 data2.sum<- data2.sum.all %>% 
   dplyr::filter(timepoint!="3") %>%  # take out the individuals that were measured three times (all post Nov 15), CT tests because those were not fed, unfair comparison
   as.data.frame() 
@@ -183,21 +182,21 @@ pred.datamm$pred.GRmm.se<-predict(mod.poly.growthmm, newdata = pred.datamm, se.f
 mod1<-lmer(temp_tolerance ~  temp + (1|tank), REML = FALSE, data = data.static.max)
 mod1.b<-lmer(temp_tolerance ~  temp + TL_mm + (1|tank), REML = FALSE, data = data.static.max)
 
-BIC(mod1, mod1.b)
+BIC(mod1, mod1.b) # with mass better 
 qqmath(mod1.b)
 summary(mod1.b)
-plot(resid(mod1.b))
+# plot(resid(mod1.b))
 
 mod1min<-lmer(temp_tolerance ~  temp + (1|tank), REML = FALSE, data = data.static.min) # singular fit for the random effects
 mod1min.b<-lmer(temp_tolerance ~  temp + TL_mm + (1|tank), REML = FALSE, data = data.static.min) # singular fit for the random effects
 # plot(mod1min)
 qqmath(mod1min.b)
 summary(mod1min.b)
-plot(resid(mod1min.b))
+# plot(resid(mod1min.b))
 
-# type II anovas 
-car::Anova(mod1.b, "II")
-car::Anova(mod1min.b, "II")
+# type II anovas:  REPORTED
+stats::anova(mod1.b, type = "II") #CTmax
+stats::anova(mod1min.b, "II") # CTmin
 
 # for predicting, plotting the data
 pred.dataCT<-as.data.frame(expand.grid(temp =seq(12, 27, 0.2)))
@@ -215,14 +214,15 @@ predCTminStatic$temp<-data.static.min$temp
 # difference between tests: 
 mod.var.CTmin<-lm(temp_tolerance ~ TestID, data = data.VARmin)
 mod.var.CTmin.b<-lm(temp_tolerance ~ TL_mm + TestID, data = data.VARmin)
-BIC(mod.var.CTmin, mod.var.CTmin.b)
-car::Anova(mod.var.CTmin.b)
+BICdelta(BIC(mod.var.CTmin, mod.var.CTmin.b))
+stats::anova(mod.var.CTmin.b)
   
 mod.var.CTmax<-lm(temp_tolerance ~ TestID, data = data.VARmax)
 mod.var.CTmax.b<-lm(temp_tolerance ~ TL_mm + TestID, data = data.VARmax)
-BIC(mod.var.CTmax, mod.var.CTmax.b)
-car::Anova(mod.var.CTmax)
+BICdelta(BIC(mod.var.CTmax, mod.var.CTmax.b))
 
+stats::anova(mod.var.CTmax)
+# car::Anova(mod.var.CTmax.b)
 ## 4. [main 2]  all tests, static and variable.  max, mean, min, delta, start temp, start daytime -----
 # CT min tests 
 model.CTmin.0<-lmer(temp_tolerance ~ 1  + (1|TestID), data = data[data$Test== "CTmin", ], REML = FALSE)
@@ -249,6 +249,7 @@ model.CTmin.9<-lmer(temp_tolerance ~ delta.T + Temp_test_start + (1|TestID), dat
 model.CTmin.10<-lmer(temp_tolerance ~ max.Env.Temp + delta.T + TimeDay2 + (1|TestID), data = data[data$Test== "CTmin", ], REML = FALSE) 
 model.CTmin.11<-lmer(temp_tolerance ~ max.Env.Temp + Temp_test_start + delta.T + (1|TestID), data = data[data$Test== "CTmin", ], REML = FALSE)
 
+### [suppl TABL 2] ----------
 # very convincing that size matters, add as a covariate also below 
 BICdelta(BIC(model.CTmin.0, model.CTmin.1, model.CTmin.2, model.CTmin.3, model.CTmin.4, model.CTmin.5, model.CTmin.6,
              model.CTmin.1.b, model.CTmin.2.b, model.CTmin.3.b, model.CTmin.4.b, model.CTmin.5.b, model.CTmin.6.b,
@@ -257,6 +258,9 @@ BICdelta(BIC(model.CTmin.0, model.CTmin.1, model.CTmin.2, model.CTmin.3, model.C
 
 # model.CTmin.7.b  6 856.8219  0.00000 # < best 
 # model.CTmin.7.d  7 860.1296  3.30771
+### [suppl TABL 2] ----------
+stats::anova(model.CTmin.7.b, type = "II") #CTmax
+
 
 # CT max tests 
 model.CTmax.0<-lmer(temp_tolerance ~ 1  + (1|TestID), data = data[data$Test== "CTmax", ], REML = FALSE)
@@ -284,12 +288,15 @@ model.CTmax.9<-lmer(temp_tolerance ~ delta.T + Temp_test_start + (1|TestID), dat
 model.CTmax.10<-lmer(temp_tolerance ~ max.Env.Temp + delta.T + TimeDay2 + (1|TestID), data = data[data$Test== "CTmax", ], REML = FALSE) 
 model.CTmax.11<-lmer(temp_tolerance ~ max.Env.Temp + Temp_test_start + delta.T + (1|TestID), data = data[data$Test== "CTmax", ], REML = FALSE)
 
+### [suppl TABL 2] ----------
 # very convincing that size matters, add as a covariate also below 
 BICdelta(BIC(model.CTmax.0, model.CTmax.1, model.CTmax.2, model.CTmax.3, model.CTmax.4, model.CTmax.5, model.CTmax.6,
              model.CTmax.1.b, model.CTmax.2.b, model.CTmax.3.b,model.CTmax.3.c, model.CTmax.4.b, model.CTmax.5.b, model.CTmax.6.b,
              model.CTmax.7,model.CTmax.7.b, 
              model.CTmax.8, model.CTmax.9, model.CTmax.10, model.CTmax.11))
- 
+### [suppl TABL 2] ----------
+stats::anova(model.CTmax.3.b, type = "II") #CTmax
+
 # model.CTmax.3.b  5 683.9662  0.00000 << best 
 # model.CTmax.7.b  6 685.0592  1.09298
 
@@ -322,9 +329,10 @@ data.ctmin.predict$pred.ctmin<- predict(model.CTmin.7.b, newdata =data.ctmin.pre
 data.ctmax.predict<-as.data.frame(expand.grid(mean.Env.Temp = c(12, 34), delta.T = c(7.844), TL_mm = 30.82))
 data.ctmax.predict$pred.ctmax<- predict(model.CTmax.3.b, newdata =data.ctmax.predict, re.form = NA)
 
-# Data Summaries, summayr stats: --------
+# Data Summaries, stats: --------
 ###  get one representative value for a treatment 
 # a dataframe with one mean per temp treatment 
+
 dat<-data2  %>% 
   filter(timepoint == "1" | timepoint == "2") %>% 
   group_by(treatment, temp_treatment, timepoint) %>% 
@@ -333,16 +341,58 @@ dat<-data2  %>%
 
 dat.CTmin<-data %>% 
   filter(Test=="CTmin") %>% 
+  # filter(Field_Lab=="FIELD") %>% 
+  # filter(Stat_Var=="variable") %>%
   group_by(treatment, temp, Phys.cond, Field_Lab, TestID) %>% 
-  summarise(mean_CT=mean(temp_tolerance), sd_CT=sd(temp_tolerance), min_CT=min(temp_tolerance), max_CT=max(temp_tolerance), n=length(temp_tolerance)) %>% 
+  summarise(mean_CT=mean(temp_tolerance),
+            sd_CT=sd(temp_tolerance),
+            min_CT=min(temp_tolerance),
+            max_CT=max(temp_tolerance),
+            n=length(temp_tolerance), 
+            dailyMin = mean(min.Env.Temp), 
+            dailyMax = mean(max.Env.Temp), 
+            dailyMean = mean(mean.Env.Temp), 
+            dailyRange = mean(mean.Env.Temp), 
+            startTemp = mean(Temp_test_start)) %>% 
   as.data.frame()
 
 dat.CTmax<-data %>% 
   filter(Test=="CTmax") %>% 
+  # filter(Field_Lab=="FIELD") %>% 
+  # filter(Stat_Var=="variable") %>%
   group_by(treatment, temp, Phys.cond,  Field_Lab, TestID) %>% 
-  summarise(mean_CT=mean(temp_tolerance), sd_CT=sd(temp_tolerance), min_CT=min(temp_tolerance), max_CT=max(temp_tolerance), n=length(temp_tolerance)) %>% 
+  summarise(mean_CT=mean(temp_tolerance),
+            sd_CT=sd(temp_tolerance),
+            min_CT=min(temp_tolerance),
+            max_CT=max(temp_tolerance),
+            n=length(temp_tolerance),
+            dailyMin = mean(min.Env.Temp), 
+            dailyMax = mean(max.Env.Temp), 
+            dailyMean = mean(mean.Env.Temp), 
+            dailyRange = mean(mean.Env.Temp), 
+            startTemp = mean(Temp_test_start)) %>% 
   as.data.frame()
   
+data %>% 
+  filter(Test=="CTmax") %>% 
+  filter(Field_Lab=="LAB") %>% 
+  filter(Stat_Var=="variable") %>% 
+  summarise(mean = mean(temp_tolerance),
+            min = min(temp_tolerance),
+            max = max(temp_tolerance),
+            CV = sd(temp_tolerance)/mean,
+            n = n())
+
+data %>% 
+  filter(Test=="CTmin") %>% 
+  filter(Field_Lab=="LAB") %>% 
+  filter(Stat_Var=="variable") %>% 
+  summarise(mean = mean(temp_tolerance),
+            min = min(temp_tolerance),
+            max = max(temp_tolerance),
+            CV = sd(temp_tolerance)/mean,
+            n = n())
+
 dat.ct<-rbind(dat.CTmin, dat.CTmax)
 
 data.ctmax<-data[data$Test == "CTmax", ]
@@ -363,6 +413,38 @@ n.indiv.max.F<-nrow(data.maxF) # field only
 n.indiv.min.F<-nrow(data.minF) # field only 
 n.indiv.max.L<-nrow(data.max) # lab only 
 n.indiv.min.L<-nrow(data.min) # lab only 
+
+# number of individuals timepoint 1:
+sum(data2.sum.all[data2.sum.all$timepoint==1, "n" ])
+# n field:
+n.indiv.max.F + n.indiv.min.F
+
+# CTmin and CTmax by static treatment
+dat.CTmin.lab<-data.min %>% 
+  filter(Stat_Var=="static") %>%  # comment out to have lab variable treatments here
+  group_by(treatment) %>% 
+  summarise(mean_CT=mean(temp_tolerance),
+            sd_CT=sd(temp_tolerance),
+            min_CT=min(temp_tolerance),
+            max_CT=max(temp_tolerance),
+            n=length(temp_tolerance), 
+            diff_treatment = mean(temp - mean_CT), 
+            CV = sd_CT / mean_CT) %>% 
+  arrange(desc(-mean_CT)) %>% 
+  mutate(diff_CT=mean_CT-lag(mean_CT))
+
+dat.CTmax.lab<-data.max %>% 
+  filter(Stat_Var=="static") %>%  # comment out to have lab variable treatments here
+  group_by(treatment) %>% 
+  summarise(mean_CT=mean(temp_tolerance),
+            sd_CT=sd(temp_tolerance),
+            min_CT=min(temp_tolerance),
+            max_CT=max(temp_tolerance),
+            n=length(temp_tolerance),
+            diff_treatment = mean(mean_CT- temp),
+            CV = sd_CT / mean_CT) %>% 
+  arrange(desc(-mean_CT)) %>% 
+  mutate(diff_CT=mean_CT-lag(mean_CT))
 
 
 # FIGURES:  ----------
@@ -395,19 +477,21 @@ CTplotFIELD <- CTplotFIELD + theme(legend.position = "none",
 CTplotFIELD
 
 ## [main 1b] mean temp *************************************
-CTplotFIELD2<-ggplot(data=data, aes(y=temp_tolerance, x=mean.Env.Temp, shape = Stat_Var, alpha = Stat_Var, size = Stat_Var, fill = temp_treatment, color = temp_treatment))+
-  geom_line(data = data.ctmax.predict, mapping = aes(y = pred.ctmax, x = mean.Env.Temp, alpha = NULL, size = NULL, shape = NULL, fill = NULL, color =NULL), lty = "dashed", color = "black", size=0.5)+
-  geom_point()+
+CTplotFIELD2<-ggplot(data=data)+
+  geom_line(data = data.ctmax.predict,
+            mapping = aes(y = pred.ctmax, x = mean.Env.Temp, alpha = NULL, size = NULL, shape = NULL, fill = NULL, color =NULL),
+            lty = "dashed", color = "black", linewidth=0.5)+
+  geom_point(aes(y=temp_tolerance, x=mean.Env.Temp, shape = Stat_Var, alpha = Stat_Var, size = Stat_Var, fill = temp_treatment, color = temp_treatment))+
   scale_shape_manual(values = c(5, 21), name = "")+
   scale_size_manual(values = c(2, 3))+
   scale_alpha_manual(values = c(1, 0.5))+
   theme_classic()+
   guides(size = "none", alpha = "none")+
   theme_classic()+
-  scale_fill_manual(values=c("12" ="#00518C", "17" = "#008A60","22" ="#DBA11C", "27" = "#BE647D", "V2" = "black", "V1" = "#A3ABBD", "FIELD" = "#00CAFF"),
-                     name = "", labels = c("12ºC", "17ºC", "22ºC", "27ºC", "Field", "V2", "V1"))+
-  scale_color_manual(values=c("12" ="#00518C", "17" = "#008A60","22" ="#DBA11C", "27" = "#BE647D", "V2" = "black", "V1" = "#A3ABBD", "FIELD" = "#00CAFF"),
-                     name = "", labels = c("12ºC", "17ºC", "22ºC", "27ºC","Field", "V2", "V1"))+
+  scale_fill_manual(values=c("12" ="#00518C", "17" = "#008A60","22" ="#DBA11C", "27" = "#BE647D","V1" = "#A3ABBD", "V2" = "black",  "FIELD" = "#00CAFF"),
+                     name = "", labels = c("12ºC", "17ºC", "22ºC", "27ºC", "Field", "V1", "V2"))+
+  scale_color_manual(values=c("12" ="#00518C", "17" = "#008A60","22" ="#DBA11C", "27" = "#BE647D", "V1" = "#A3ABBD","V2" = "black",  "FIELD" = "#00CAFF"),
+                     name = "", labels = c("12ºC", "17ºC", "22ºC", "27ºC","Field", "V1", "V2"))+
   scale_y_continuous(limits = c(-8, 47), breaks = c(seq(0, 45, 5)))+
   annotate(geom = "text", y = 44, x = 15, hjust = 0, color = "black", size = 3.5,
          label = bquote( CT[max] == ~ .(CTmax.int) ~ "+" ~ .(CTmax.slopeMean) * T[mean] ~ + .(CTmax.slopeTL) * "TL"))
@@ -462,7 +546,7 @@ plot_growth2 <- ggplot()+
   geom_text(data = NULL, aes(x = 12, y = 0.03), label = "n (tank)", size = 3)+
   geom_point(data = growth.mod.mean, aes(x = temp, mean_GRmm, color = temp_treatment.x, fill = temp_treatment.x), alpha= 1, pch = 22, size=3)+
   geom_errorbar(data = growth.mod.mean, mapping = aes(x = temp, ymin = mean_GRmm-sd_GRmm, ymax = mean_GRmm+sd_GRmm, color = temp_treatment.x), size=0.2, width = 0.1)+
-  scale_color_manual(values=c("12" ="#00518C", "17" = "#008A60","22" ="#DBA11C", "27" = "#BE647D", "V2" = "black", "V1" = "#A3ABBD") )+
+  scale_color_manual(values=c("12" ="#00518C", "17" = "#008A60","22" ="#DBA11C", "27" = "#BE647D", "V2" = "black", "V" = "#A3ABBD") )+
   scale_fill_manual(values=c("12" ="#00518C",  "17" = "#008A60","22" ="#DBA11C","27" ="#BE647D", "V2" = "black", "V1" = "#A3ABBD") )+
   theme_classic()
   xlim(10,30)+
@@ -527,10 +611,10 @@ plot_CTmaxmin <- ggplot(data[!c(data$Field_Lab == "LAB" & !c(data$temp_treatment
   theme_classic()+
   ylim(0, 42)
 ggformat(plot_CTmaxmin, x_title = "Temperature treatment", y_title = expression(Temperature~tolerance~(degree*C)), size_text = 12,  print=FALSE)
-plot_CTmaxmin <- plot_CTmaxmin+theme(legend.position = c(0.9, 0.5),
+plot_CTmaxmin <- plot_CTmaxmin + theme(legend.position = c(0.87, 0.5),
                                      axis.title.y = element_blank())
 
-### !!!! ADD POSTHOCS ---------
+###  ---------
 plot_CTmaxminLAB <- ggplot(data[c(data$Field_Lab == "LAB" & !c(data$temp_treatment=="V1" | data$temp_treatment=="V2")),],
                         aes(x = temp, y = temp_tolerance, fill = TestID2, color = TestID2))+
   geom_line(data = predCTmaxStatic, aes(x = temp, y = upr, fill = NULL, color = NULL), color = "grey30", lwd = 0.2, lty=2 )+
