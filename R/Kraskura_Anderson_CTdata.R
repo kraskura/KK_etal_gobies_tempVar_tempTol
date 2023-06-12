@@ -2,13 +2,13 @@
 library(ggformat2) # from kraskura/ggformat github package. 
 library(chron)
 library(lubridate)
-library(data.table)
+library(lattice) # for qqmath
 library(zoo)
 library(ggrepel)
-library(lme4)
-library(emmeans)
-library(merTools)
-library(lmerTest) 
+library(lme4) # linear models
+library(emmeans) # post hocs
+library(merTools)# for predicting CI intervals
+# library(lmerTest) 
 library(tidyverse)
 
 library(here)
@@ -159,8 +159,8 @@ growth.mod.mean<-data2.sum.w %>%
 
 # STATS:----- 
 
-boxplot(temp_tolerance ~ TestID, data = data[data$Test == "CTmin",])
-boxplot(temp_tolerance ~ TestID, data = data[data$Test == "CTmax",])
+boxplot(temp_tolerance ~ TestID2, data = data[data$Test == "CTmin",])
+boxplot(temp_tolerance ~ TestID2, data = data[data$Test == "CTmax",])
 
 ## 1. [suppl 2] LAB: growth ----- 
 # mass in mg <<!  this is less reliable because fish are so small and the water residual error can overpower the mass. 
@@ -173,7 +173,9 @@ pred.datamm<-as.data.frame(expand.grid(temp =seq(12, 27, 0.2)))
 pred.datamm$pred.GRmm<-predict(mod.poly.growthmm, newdata = pred.datamm)
 pred.datamm$pred.GRmm.se<-predict(mod.poly.growthmm, newdata = pred.datamm, se.fit = TRUE)[[2]]
 
-## 2. [suppl 1a] LAB: Static temp tests -- CTmax and CTmin (continuous temp predictor) --------
+## 2. [suppl 1a] LAB & STATIC ONLY  (continuous temp predictor) --------
+# H: CTmin and CTmax increase with increasing static acclimation temperatures.
+# ***********************************************
 # mixed model using tank as a random effect
 # data<-data[data$Phys.cond =="NOTFED", ] # only fish that were not fed. 
 # dataFED<-data[data$Phys.cond =="FED", ] 
@@ -193,61 +195,80 @@ mod1min.b<-lmer(temp_tolerance ~  temp + TL_mm + (1|tank), REML = FALSE, data = 
 qqmath(mod1min.b)
 summary(mod1min.b)
 # plot(resid(mod1min.b))
+# singular fit is effectively the same as simple linear regression (lm)
 
 # type II anovas:  REPORTED
-stats::anova(mod1.b, type = "II") #CTmax
-stats::anova(mod1min.b, "II") # CTmin
+car::Anova(mod1.b, type = "II") #CTmax
+car::Anova(mod1min.b, "II") # CTmin
 
 # for predicting, plotting the data
-pred.dataCT<-as.data.frame(expand.grid(temp =seq(12, 27, 0.2)))
-pred.dataCT$ctmax_pred<-predict(mod1,newdata = pred.dataCT, re=NA)
-pred.dataCT$ctmin_pred<-predict(mod1min,newdata = pred.dataCT, re=NA)
+pred.dataCT<-as.data.frame(expand.grid(temp =seq(12, 27, 0.2), TL_mm = 36))
+pred.dataCT$ctmax_pred<-predict(mod1.b,newdata = pred.dataCT, re=NA)
+pred.dataCT$ctmin_pred<-predict(mod1min.b,newdata = pred.dataCT, re=NA)
 
-predCTmaxStatic<-predictInterval(mod1, data.static.max, which = "fixed",include.resid.var = TRUE, level = 0.95, n.sims = 1000, type="linear.prediction")
-predCTminStatic<-predictInterval(mod1min, data.static.min, which = "fixed",include.resid.var = TRUE, level = 0.95, n.sims = 1000, type="linear.prediction")
+predCTmaxStatic<-predictInterval(mod1.b, data.static.max, which = "fixed",include.resid.var = TRUE, level = 0.95, n.sims = 1000, type="linear.prediction")
+predCTminStatic<-predictInterval(mod1min.b, data.static.min, which = "fixed",include.resid.var = TRUE, level = 0.95, n.sims = 1000, type="linear.prediction")
 predCTmaxStatic$temp<-data.static.max$temp
 predCTminStatic$temp<-data.static.min$temp
 
-## 3. [suppl 1b] FIELD + LAB: Variable treatments only  -----------
-# dat.$DIFCT<-dat.ctF$mean_CTmax - dat.ctF$mean_CTmin
-
-# difference between tests: 
-mod.var.CTmin<-lm(temp_tolerance ~ TestID, data = data.VARmin)
-mod.var.CTmin.b<-lm(temp_tolerance ~ TL_mm + TestID, data = data.VARmin)
-BICdelta(BIC(mod.var.CTmin, mod.var.CTmin.b))
-stats::anova(mod.var.CTmin.b)
+## 3. [suppl 1b] ALL TESTS: ANOVA between all tests -----------
+# H: CTmin and CTmax differ between treatments (lab) and tests (field)
+# ***********************************************
+# testID2 - treatments, or days tested. 
+mod.CTmin<-lm(temp_tolerance ~ treatment, data = data[data$Test== "CTmin", ])
+mod.CTmin.b<-lm(temp_tolerance ~ TL_mm + treatment, data = data[data$Test== "CTmin", ])
+BICdelta(BIC(mod.CTmin, mod.CTmin.b))
+car::Anova(mod.CTmin.b, type = "II")
+# plot(mod.CTmin.b)
   
-mod.var.CTmax<-lm(temp_tolerance ~ TestID, data = data.VARmax)
-mod.var.CTmax.b<-lm(temp_tolerance ~ TL_mm + TestID, data = data.VARmax)
+mod.CTmax<-lm(temp_tolerance ~ treatment, data = data[data$Test== "CTmax", ])
+mod.CTmax.b<-lm(temp_tolerance ~ TL_mm + treatment, data = data[data$Test== "CTmax", ])
+BICdelta(BIC(mod.CTmax, mod.CTmax.b))
+car::Anova(mod.CTmax.b, type = "II")
+# plot(mod.CTmax.b)
+
+contrast(emmeans(mod.CTmax.b, ~ treatment), "pairwise")
+contrast(emmeans(mod.CTmin.b, ~ treatment), "pairwise")
+
+## 4. [suppl 1b] FIELD vs LAB: variable treatments -----------
+# H: CTmin and CTmax is not different between lab and field variable treatments
+# ***********************************************
+mod.var.CTmin<-lmer(temp_tolerance ~ Field_Lab + (1|treatment), data = data.VARmin, REML = FALSE)
+mod.var.CTmin.b<-lmer(temp_tolerance ~ Field_Lab + TL_mm + (1|treatment), data = data.VARmin, REML = FALSE)
+BICdelta(BIC(mod.var.CTmin, mod.var.CTmin.b))
+car::Anova(mod.var.CTmin.b, type = "II")
+
+mod.var.CTmax<-lmer(temp_tolerance ~ Field_Lab + (1|treatment), data = data.VARmax, REML = FALSE)
+mod.var.CTmax.b<-lmer(temp_tolerance ~ Field_Lab + TL_mm + (1|treatment), data = data.VARmax, REML = FALSE)
 BICdelta(BIC(mod.var.CTmax, mod.var.CTmax.b))
+car::Anova(mod.var.CTmax.b, type = "II")
 
-stats::anova(mod.var.CTmax)
-# car::Anova(mod.var.CTmax.b)
-## 4. [main 2]  all tests, static and variable.  max, mean, min, delta, start temp, start daytime -----
+## 5. [main 2]  ALL TESTS: continuous , static and variable.  max, mean, min, delta, start temp, start daytime -----
+# H: [exploratory] what recent thermal history variable explains CTmin and CT max best?
 # CT min tests 
-model.CTmin.0<-lmer(temp_tolerance ~ 1  + (1|TestID), data = data[data$Test== "CTmin", ], REML = FALSE)
-model.CTmin.1<-lmer(temp_tolerance ~ max.Env.Temp + (1|TestID), data = data[data$Test== "CTmin", ], REML = FALSE) 
-model.CTmin.1.b<-lmer(temp_tolerance ~ max.Env.Temp + TL_mm + (1|TestID), data = data[data$Test== "CTmin", ], REML = FALSE) 
-model.CTmin.2<-lmer(temp_tolerance ~ min.Env.Temp + (1|TestID), data = data[data$Test== "CTmin", ], REML = FALSE) 
-model.CTmin.2.b<-lmer(temp_tolerance ~ min.Env.Temp + TL_mm + (1|TestID), data = data[data$Test== "CTmin", ], REML = FALSE) 
-model.CTmin.3<-lmer(temp_tolerance ~ mean.Env.Temp + (1|TestID), data = data[data$Test== "CTmin", ], REML = FALSE) 
-model.CTmin.3.b<-lmer(temp_tolerance ~ mean.Env.Temp +TL_mm +  (1|TestID), data = data[data$Test== "CTmin", ], REML = FALSE) 
-model.CTmin.4<-lmer(temp_tolerance ~ Temp_test_start + (1|TestID), data = data[data$Test== "CTmin", ], REML = FALSE) 
-model.CTmin.4.b<-lmer(temp_tolerance ~ Temp_test_start + TL_mm + (1|TestID), data = data[data$Test== "CTmin", ], REML = FALSE) 
-model.CTmin.5<-lmer(temp_tolerance ~ delta.T + (1|TestID), data = data[data$Test== "CTmin", ], REML = FALSE) 
-model.CTmin.5.b<-lmer(temp_tolerance ~ delta.T + TL_mm + (1|TestID), data = data[data$Test== "CTmin", ], REML = FALSE) 
-model.CTmin.6<-lmer(temp_tolerance ~ TimeDay2 + (1|TestID), data = data[data$Test== "CTmin", ], REML = FALSE) 
-model.CTmin.6.b<-lmer(temp_tolerance ~ TimeDay2 + TL_mm + (1|TestID), data = data[data$Test== "CTmin", ], REML = FALSE) 
+model.CTmin.0<-lmer(temp_tolerance ~ 1  + (1|treatment), data = data[data$Test== "CTmin", ], REML = FALSE)
+model.CTmin.1<-lmer(temp_tolerance ~ max.Env.Temp + (1|treatment), data = data[data$Test== "CTmin", ], REML = FALSE) 
+model.CTmin.1.b<-lmer(temp_tolerance ~ max.Env.Temp + TL_mm + (1|treatment), data = data[data$Test== "CTmin", ], REML = FALSE) 
+model.CTmin.2<-lmer(temp_tolerance ~ min.Env.Temp + (1|treatment), data = data[data$Test== "CTmin", ], REML = FALSE) 
+model.CTmin.2.b<-lmer(temp_tolerance ~ min.Env.Temp + TL_mm + (1|treatment), data = data[data$Test== "CTmin", ], REML = FALSE) 
+model.CTmin.3<-lmer(temp_tolerance ~ mean.Env.Temp + (1|treatment), data = data[data$Test== "CTmin", ], REML = FALSE) 
+model.CTmin.3.b<-lmer(temp_tolerance ~ mean.Env.Temp +TL_mm +  (1|treatment), data = data[data$Test== "CTmin", ], REML = FALSE) 
+model.CTmin.4<-lmer(temp_tolerance ~ Temp_test_start + (1|treatment), data = data[data$Test== "CTmin", ], REML = FALSE) 
+model.CTmin.4.b<-lmer(temp_tolerance ~ Temp_test_start + TL_mm + (1|treatment), data = data[data$Test== "CTmin", ], REML = FALSE) 
+model.CTmin.5<-lmer(temp_tolerance ~ delta.T + (1|treatment), data = data[data$Test== "CTmin", ], REML = FALSE) 
+model.CTmin.5.b<-lmer(temp_tolerance ~ delta.T + TL_mm + (1|treatment), data = data[data$Test== "CTmin", ], REML = FALSE) 
+model.CTmin.6<-lmer(temp_tolerance ~ TimeDay2 + (1|treatment), data = data[data$Test== "CTmin", ], REML = FALSE) 
+model.CTmin.6.b<-lmer(temp_tolerance ~ TimeDay2 + TL_mm + (1|treatment), data = data[data$Test== "CTmin", ], REML = FALSE) 
 
-model.CTmin.7<-lmer(temp_tolerance ~ max.Env.Temp + delta.T + (1|TestID), data = data[data$Test== "CTmin", ], REML = FALSE) 
-model.CTmin.7.c<-lmer(temp_tolerance ~ max.Env.Temp + delta.T + Stat_Var + (1|TestID), data = data[data$Test== "CTmin", ], REML = FALSE) 
-model.CTmin.7.b<-lmer(temp_tolerance ~ max.Env.Temp + delta.T + TL_mm + (1|TestID), data = data[data$Test== "CTmin", ], REML = FALSE) # best 
-model.CTmin.7.d<-lmer(temp_tolerance ~ max.Env.Temp + delta.T + TL_mm + Stat_Var + (1|TestID), data = data[data$Test== "CTmin", ], REML = FALSE) # best 
+model.CTmin.7<-lmer(temp_tolerance ~ max.Env.Temp + delta.T + (1|treatment), data = data[data$Test== "CTmin", ], REML = FALSE) 
+model.CTmin.7.c<-lmer(temp_tolerance ~ max.Env.Temp + delta.T + Stat_Var + (1|treatment), data = data[data$Test== "CTmin", ], REML = FALSE) 
+model.CTmin.7.b<-lmer(temp_tolerance ~ max.Env.Temp + delta.T + TL_mm + (1|treatment), data = data[data$Test== "CTmin", ], REML = FALSE) # best 
+model.CTmin.7.d<-lmer(temp_tolerance ~ max.Env.Temp + delta.T + TL_mm + Stat_Var + (1|treatment), data = data[data$Test== "CTmin", ], REML = FALSE) # best 
 
-model.CTmin.8<-lmer(temp_tolerance ~ max.Env.Temp + Temp_test_start + (1|TestID), data = data[data$Test== "CTmin", ], REML = FALSE) 
-model.CTmin.9<-lmer(temp_tolerance ~ delta.T + Temp_test_start + (1|TestID), data = data[data$Test== "CTmin", ], REML = FALSE) 
-model.CTmin.10<-lmer(temp_tolerance ~ max.Env.Temp + delta.T + TimeDay2 + (1|TestID), data = data[data$Test== "CTmin", ], REML = FALSE) 
-model.CTmin.11<-lmer(temp_tolerance ~ max.Env.Temp + Temp_test_start + delta.T + (1|TestID), data = data[data$Test== "CTmin", ], REML = FALSE)
+model.CTmin.8<-lmer(temp_tolerance ~ max.Env.Temp + Temp_test_start + (1|treatment), data = data[data$Test== "CTmin", ], REML = FALSE) 
+model.CTmin.9<-lmer(temp_tolerance ~ delta.T + Temp_test_start + (1|treatment), data = data[data$Test== "CTmin", ], REML = FALSE) 
+model.CTmin.10<-lmer(temp_tolerance ~ max.Env.Temp + delta.T + TimeDay2 + (1|treatment), data = data[data$Test== "CTmin", ], REML = FALSE) 
+model.CTmin.11<-lmer(temp_tolerance ~ max.Env.Temp + Temp_test_start + delta.T + (1|treatment), data = data[data$Test== "CTmin", ], REML = FALSE)
 
 ### [suppl TABL 2] ----------
 # very convincing that size matters, add as a covariate also below 
@@ -256,37 +277,35 @@ BICdelta(BIC(model.CTmin.0, model.CTmin.1, model.CTmin.2, model.CTmin.3, model.C
              model.CTmin.7,model.CTmin.7.d, model.CTmin.7.b, model.CTmin.7.c,
              model.CTmin.8, model.CTmin.9, model.CTmin.10, model.CTmin.11))
 
-# model.CTmin.7.b  6 856.8219  0.00000 # < best 
-# model.CTmin.7.d  7 860.1296  3.30771
-### [suppl TABL 2] ----------
-stats::anova(model.CTmin.7.b, type = "II") #CTmax
 
+### [suppl TABL 2] ----------
+car::Anova(model.CTmin.1.b, type = "II") #CTmax
 
 # CT max tests 
-model.CTmax.0<-lmer(temp_tolerance ~ 1  + (1|TestID), data = data[data$Test== "CTmax", ], REML = FALSE)
-model.CTmax.1<-lmer(temp_tolerance ~ max.Env.Temp + (1|TestID), data = data[data$Test== "CTmax", ], REML = FALSE) 
-model.CTmax.1.b<-lmer(temp_tolerance ~ max.Env.Temp + TL_mm + (1|TestID), data = data[data$Test== "CTmax", ], REML = FALSE) 
-model.CTmax.2<-lmer(temp_tolerance ~ min.Env.Temp + (1|TestID), data = data[data$Test== "CTmax", ], REML = FALSE) 
-model.CTmax.2.b<-lmer(temp_tolerance ~ min.Env.Temp + TL_mm + (1|TestID), data = data[data$Test== "CTmax", ], REML = FALSE) 
+model.CTmax.0<-lmer(temp_tolerance ~ 1  + (1|treatment), data = data[data$Test== "CTmax", ], REML = FALSE)
+model.CTmax.1<-lmer(temp_tolerance ~ max.Env.Temp + (1|treatment), data = data[data$Test== "CTmax", ], REML = FALSE) 
+model.CTmax.1.b<-lmer(temp_tolerance ~ max.Env.Temp + TL_mm + (1|treatment), data = data[data$Test== "CTmax", ], REML = FALSE) 
+model.CTmax.2<-lmer(temp_tolerance ~ min.Env.Temp + (1|treatment), data = data[data$Test== "CTmax", ], REML = FALSE) 
+model.CTmax.2.b<-lmer(temp_tolerance ~ min.Env.Temp + TL_mm + (1|treatment), data = data[data$Test== "CTmax", ], REML = FALSE) 
 
-model.CTmax.3<-lmer(temp_tolerance ~ mean.Env.Temp + (1|TestID), data = data[data$Test== "CTmax", ], REML = FALSE) 
-model.CTmax.3.b<-lmer(temp_tolerance ~ mean.Env.Temp + TL_mm + (1|TestID), data = data[data$Test== "CTmax", ], REML = FALSE) # <<< BEST
-model.CTmax.3.c<-lmer(temp_tolerance ~ mean.Env.Temp + TL_mm + delta.T + (1|TestID), data = data[data$Test== "CTmax", ], REML = FALSE) 
+model.CTmax.3<-lmer(temp_tolerance ~ mean.Env.Temp + (1|treatment), data = data[data$Test== "CTmax", ], REML = FALSE) 
+model.CTmax.3.b<-lmer(temp_tolerance ~ mean.Env.Temp + TL_mm + (1|treatment), data = data[data$Test== "CTmax", ], REML = FALSE) # <<< BEST
+model.CTmax.3.c<-lmer(temp_tolerance ~ mean.Env.Temp + TL_mm + delta.T + (1|treatment), data = data[data$Test== "CTmax", ], REML = FALSE) 
 
-model.CTmax.4<-lmer(temp_tolerance ~ Temp_test_start + (1|TestID), data = data[data$Test== "CTmax", ], REML = FALSE) 
-model.CTmax.4.b<-lmer(temp_tolerance ~ Temp_test_start + TL_mm + (1|TestID), data = data[data$Test== "CTmax", ], REML = FALSE) 
-model.CTmax.5<-lmer(temp_tolerance ~ delta.T + (1|TestID), data = data[data$Test== "CTmax", ], REML = FALSE) 
-model.CTmax.5.b<-lmer(temp_tolerance ~ delta.T + TL_mm + (1|TestID), data = data[data$Test== "CTmax", ], REML = FALSE) 
-model.CTmax.6<-lmer(temp_tolerance ~ TimeDay2 + (1|TestID), data = data[data$Test== "CTmax", ], REML = FALSE) 
-model.CTmax.6.b<-lmer(temp_tolerance ~ TimeDay2 + TL_mm + (1|TestID), data = data[data$Test== "CTmax", ], REML = FALSE) 
+model.CTmax.4<-lmer(temp_tolerance ~ Temp_test_start + (1|treatment), data = data[data$Test== "CTmax", ], REML = FALSE) 
+model.CTmax.4.b<-lmer(temp_tolerance ~ Temp_test_start + TL_mm + (1|treatment), data = data[data$Test== "CTmax", ], REML = FALSE) 
+model.CTmax.5<-lmer(temp_tolerance ~ delta.T + (1|treatment), data = data[data$Test== "CTmax", ], REML = FALSE) 
+model.CTmax.5.b<-lmer(temp_tolerance ~ delta.T + TL_mm + (1|treatment), data = data[data$Test== "CTmax", ], REML = FALSE) 
+model.CTmax.6<-lmer(temp_tolerance ~ TimeDay2 + (1|treatment), data = data[data$Test== "CTmax", ], REML = FALSE) 
+model.CTmax.6.b<-lmer(temp_tolerance ~ TimeDay2 + TL_mm + (1|treatment), data = data[data$Test== "CTmax", ], REML = FALSE) 
 
-model.CTmax.7<-lmer(temp_tolerance ~ max.Env.Temp + delta.T + (1|TestID), data = data[data$Test== "CTmax", ], REML = FALSE) 
-model.CTmax.7.b<-lmer(temp_tolerance ~ max.Env.Temp + delta.T + TL_mm + (1|TestID), data = data[data$Test== "CTmax", ], REML = FALSE) 
+model.CTmax.7<-lmer(temp_tolerance ~ max.Env.Temp + delta.T + (1|treatment), data = data[data$Test== "CTmax", ], REML = FALSE) 
+model.CTmax.7.b<-lmer(temp_tolerance ~ max.Env.Temp + delta.T + TL_mm + (1|treatment), data = data[data$Test== "CTmax", ], REML = FALSE) 
 
-model.CTmax.8<-lmer(temp_tolerance ~ max.Env.Temp + Temp_test_start + (1|TestID), data = data[data$Test== "CTmax", ], REML = FALSE) 
-model.CTmax.9<-lmer(temp_tolerance ~ delta.T + Temp_test_start + (1|TestID), data = data[data$Test== "CTmax", ], REML = FALSE) 
-model.CTmax.10<-lmer(temp_tolerance ~ max.Env.Temp + delta.T + TimeDay2 + (1|TestID), data = data[data$Test== "CTmax", ], REML = FALSE) 
-model.CTmax.11<-lmer(temp_tolerance ~ max.Env.Temp + Temp_test_start + delta.T + (1|TestID), data = data[data$Test== "CTmax", ], REML = FALSE)
+model.CTmax.8<-lmer(temp_tolerance ~ max.Env.Temp + Temp_test_start + (1|treatment), data = data[data$Test== "CTmax", ], REML = FALSE) 
+model.CTmax.9<-lmer(temp_tolerance ~ delta.T + Temp_test_start + (1|treatment), data = data[data$Test== "CTmax", ], REML = FALSE) 
+model.CTmax.10<-lmer(temp_tolerance ~ max.Env.Temp + delta.T + TimeDay2 + (1|treatment), data = data[data$Test== "CTmax", ], REML = FALSE) 
+model.CTmax.11<-lmer(temp_tolerance ~ max.Env.Temp + Temp_test_start + delta.T + (1|treatment), data = data[data$Test== "CTmax", ], REML = FALSE)
 
 ### [suppl TABL 2] ----------
 # very convincing that size matters, add as a covariate also below 
@@ -295,19 +314,17 @@ BICdelta(BIC(model.CTmax.0, model.CTmax.1, model.CTmax.2, model.CTmax.3, model.C
              model.CTmax.7,model.CTmax.7.b, 
              model.CTmax.8, model.CTmax.9, model.CTmax.10, model.CTmax.11))
 ### [suppl TABL 2] ----------
-stats::anova(model.CTmax.3.b, type = "II") #CTmax
+car::Anova(model.CTmax.3.b, type = "II") #CTmax
 
-# model.CTmax.3.b  5 683.9662  0.00000 << best 
-# model.CTmax.7.b  6 685.0592  1.09298
 
 # model residuals, performance, etc. 
 plot(model.CTmax.3.b) # good 
 qqmath(model.CTmax.3.b)
 hist(resid(model.CTmax.3.b), breaks = 50) # normal, good; few outliers
 
-plot(model.CTmin.7.b) # good 
-qqmath(model.CTmin.7.b)
-hist(resid(model.CTmin.7.b), breaks = 50) # normal, good; few outliers
+plot(model.CTmin.1.b) # good 
+qqmath(model.CTmin.1.b)
+hist(resid(model.CTmin.1.b), breaks = 50) # normal, good; few outliers
 
 ### variables for plotting -----
 # mean env temp
@@ -317,11 +334,10 @@ CTmax.slopeTL<-round(fixef(model.CTmax.3.b)[3], 2)
 CTmax.n<-unlist(summary(model.CTmax.3.b)[[3]][2])[1]
 
 # max env temp & delta 
-CTmin.int<-round(fixef(model.CTmin.7.b)[1], 2)
-CTmin.slopeMax<-round(fixef(model.CTmin.7.b)[2], 2)
-CTmin.slopeDelta<-round(fixef(model.CTmin.7.b)[3], 2)
-CTmin.slopeTL<-round(fixef(model.CTmin.7.b)[4], 2)
-CTmin.n<-unlist(summary(model.CTmin.7.b)[[3]][2])[1]
+CTmin.int<-round(fixef(model.CTmin.1.b)[1], 2)
+CTmin.slopeMax<-round(fixef(model.CTmin.1.b)[2], 2)
+CTmin.slopeTL<-round(fixef(model.CTmin.1.b)[3], 2)
+CTmin.n<-unlist(summary(model.CTmin.1.b)[[3]][2])[1]
 
 data.ctmin.predict<-as.data.frame(expand.grid(max.Env.Temp = c(12, 34), delta.T = c(7.844), TL_mm = 30.82))
 data.ctmin.predict$pred.ctmin<- predict(model.CTmin.7.b, newdata =data.ctmin.predict, re.form = NA)
@@ -516,24 +532,25 @@ CTplotFIELD1<-ggplot(data=data, aes(y=temp_tolerance, x=max.Env.Temp,  shape = S
   scale_color_manual(values=c("12" ="#00518C", "17" = "#008A60","22" ="#DBA11C", "27" = "#BE647D", "V2" = "black", "V1" = "#A3ABBD", "FIELD" = "#00CAFF"), name = "Treatment ºC" )+
   scale_y_continuous(limits = c(-8, 47), breaks = c(seq(0, 45, 5)))+
   annotate(geom = "text", y = -5, x = 11.5, hjust = 0, color = "black", size = 3.5,
-         label = bquote( CT[min] == ~ .(CTmin.int) ~ "+" ~ .(CTmin.slopeMax) * T[max] ~ .(CTmin.slopeDelta) * T[range] ~ .(CTmin.slopeTL) * "TL"))
+         label = bquote( CT[min] == ~ .(CTmin.int) ~ "+" ~ .(CTmin.slopeMax) * T[max] ~ .(CTmin.slopeTL) * "TL"))
  ggformat(CTplotFIELD1, x_title = expression(Max~daily~T~(degree*C)), y_title = expression(Temperature~tolerance~(degree*C)), print = TRUE, size_text = 12)
 CTplotFIELD1 <- CTplotFIELD1 + theme(legend.position = "none", 
                                      legend.title = element_text(), 
                                      axis.title.y = element_blank())
 
-cowplot:::plot_grid(CTplotFIELD2, CTplotFIELD1, CTplotFIELD,
+cowplot:::plot_grid(CTplotFIELD2, CTplotFIELD1,
                     labels = "AUTO", 
                     nrow =1,
-                    ncol=3,
+                    ncol=2,
                     align = "hv", 
-                    label_x = c(0.2, 0.2, 0.2),
-                    label_y = c(0.9, 0.9, 0.9),
-                    rel_widths = c(1,1,1)) %>% 
-ggsave(filename = "Figures/Figure3_EnvCorrelations.png", width = 11, height = 4)
+                    label_size = 16,
+                    label_x = c(0.18, 0.18),
+                    label_y = c(0.9, 0.9),
+                    rel_widths = c(1,1)) %>% 
+ggsave(filename = "Figures/Figure3_EnvCorrelations.png", width = 8, height = 4)
 # ggsave(plot_CTsizeF, filename = "/Users/kristakraskura/Desktop/BOX/UCSB/Research/Carpinteria marsh fish /DataAnalysis/PLOTS/Field_CTmaxCT_size.png", width = 7, height = 3.5)
  
-## 1. [suppl 2]: LAB - Growth, mm------
+## 1. [not in ms]: LAB - Growth, mm------
 plot_growth2 <- ggplot()+
   geom_line(data = pred.datamm, mapping = aes(x = temp, y = pred.GRmm), color = "grey30", lwd = 0.9)+
   geom_line(data = pred.datamm, mapping = aes(x = temp, y = pred.GRmm+pred.GRmm.se), color = "grey30", lwd = 0.2, lty=2)+
@@ -548,7 +565,7 @@ plot_growth2 <- ggplot()+
   geom_errorbar(data = growth.mod.mean, mapping = aes(x = temp, ymin = mean_GRmm-sd_GRmm, ymax = mean_GRmm+sd_GRmm, color = temp_treatment.x), size=0.2, width = 0.1)+
   scale_color_manual(values=c("12" ="#00518C", "17" = "#008A60","22" ="#DBA11C", "27" = "#BE647D", "V2" = "black", "V" = "#A3ABBD") )+
   scale_fill_manual(values=c("12" ="#00518C",  "17" = "#008A60","22" ="#DBA11C","27" ="#BE647D", "V2" = "black", "V1" = "#A3ABBD") )+
-  theme_classic()
+  theme_classic()+
   xlim(10,30)+
   ylim(0, 0.2)
 ggformat(plot_growth2, x_title = "Temperature treatment", y_title = expression(Growth~rate~(mm~d^-1)), print=F, size_text = 12)
@@ -647,23 +664,21 @@ ggsave( filename = "./Figures/FigureS2_CTresults.png", width = 8, height = 4)
 
 
 ## 3. [suppl 3] scaling plot ------
-plot_CTsize<-ggplot(data=data, aes(y=temp_tolerance , x=mass_mg,
+plot_CTsize_mg<-ggplot(data=data, aes(y=temp_tolerance , x=mass_mg,
                                    group = interaction(Test, temp),
                                    fill = Field_Lab, color = Field_Lab)) +
   geom_point( colour="black", pch=21, size=2)+
   facet_wrap(.~Test, scale="free")+
-  theme_classic()+
-  scale_fill_locuszoom()
-ggformat(plot_CTsize, x_title = "Body mass (mg)", y_title = expression(Temperature~tolerance~(degree*C)), print = TRUE)
+  theme_classic()
+ggformat(plot_CTsize_mg, x_title = "Body mass (mg)", y_title = expression(Temperature~tolerance~(degree*C)), print = TRUE)
 
-plot_CTsize<-ggplot(data=data, aes(y=temp_tolerance , x=TL_mm,
+plot_CTsize_mm<-ggplot(data=data, aes(y=temp_tolerance , x=TL_mm,
                                    group = interaction(Test, temp),
                                    fill = Field_Lab, color = Field_Lab)) +
   geom_point( colour="black", pch=21, size=2)+
   facet_wrap(.~Test, scale="free")+
-  theme_classic()+
-  scale_fill_locuszoom()
-ggformat(plot_CTsize, x_title = "Body Lentgth (mm)", y_title = expression(Temperature~tolerance~(degree*C)), print = TRUE, size_text = 12)
+  theme_classic()
+ggformat(plot_CTsize_mm, x_title = "Body Lentgth (mm)", y_title = expression(Temperature~tolerance~(degree*C)), print = TRUE, size_text = 12)
 ggsave( filename = "./Figures/Figure3_scaling_TLmm.png", width = 8, height = 4)
 
 
