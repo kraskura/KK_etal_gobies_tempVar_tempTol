@@ -212,7 +212,7 @@ predCTmaxStatic$temp<-data.static.max$temp
 predCTminStatic$temp<-data.static.min$temp
 
 ## 3. [suppl 1b] ALL TESTS: ANOVA between all tests -----------
-# H: CTmin and CTmax differ between treatments (lab) and tests (field)
+# H: CTmin and CTmax differ between each test (lab and field tests, variable and static tests together)
 # ***********************************************
 # testID2 - treatments, or days tested. 
 mod.CTmin<-lm(temp_tolerance ~ treatment, data = data[data$Test== "CTmin", ])
@@ -238,10 +238,21 @@ mod.var.CTmin.b<-lmer(temp_tolerance ~ Field_Lab + TL_mm + (1|treatment), data =
 BICdelta(BIC(mod.var.CTmin, mod.var.CTmin.b))
 car::Anova(mod.var.CTmin.b, type = "II")
 
+emmeans(mod.var.CTmin, ~ Field_Lab) # estimated means 
+data.VARmin %>% 
+  group_by(Field_Lab) %>% 
+  summarize(mean_ct = mean( temp_tolerance)) # measured means 
+
 mod.var.CTmax<-lmer(temp_tolerance ~ Field_Lab + (1|treatment), data = data.VARmax, REML = FALSE)
 mod.var.CTmax.b<-lmer(temp_tolerance ~ Field_Lab + TL_mm + (1|treatment), data = data.VARmax, REML = FALSE)
 BICdelta(BIC(mod.var.CTmax, mod.var.CTmax.b))
 car::Anova(mod.var.CTmax.b, type = "II")
+
+emmeans(mod.var.CTmax.b, ~ Field_Lab) # estimated means 
+data.VARmax %>% 
+  group_by(Field_Lab) %>% 
+  summarize(mean_ct = mean( temp_tolerance)) %>% 
+  dplyr::mutate_if(is.numeric, round, 3) # measured means 
 
 ## 5. [main 2]  ALL TESTS: continuous , static and variable.  max, mean, min, delta, start temp, start daytime -----
 # H: [exploratory] what recent thermal history variable explains CTmin and CT max best?
