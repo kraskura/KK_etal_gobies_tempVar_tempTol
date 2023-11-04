@@ -264,6 +264,9 @@ SiteTempsSep<- SiteTempsSep %>%
   filter(SiteID == "TestSite") %>% 
   write.csv(file = "./Data/Analysis source/SiteTempsSep.csv")
 
+# one warm day
+SiteTempsJulWARM<- extractTimeFrame(dataCarp, year = 2021, minMo = 7, maxMo = 7, minDay = 9, maxDay = 9)
+summary(SiteTempsJulWARM[SiteTempsJulWARM$SiteID=="TestSite",])
 
 # section of data presenting variation in 2020 January, cold mo only 
 dataCarp.V1<- extractTimeFrame(dataCarp, year = 2020, minMo = 1, maxMo = 2, minDay = 1, maxDay = 31)
